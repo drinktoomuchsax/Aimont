@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Recall</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0a0a0f;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 500;
+      color: #888;
+      margin-bottom: 8px;
+      letter-spacing: 0.5px;
+    }
+
+    .connection-status {
+      font-size: 0.75rem;
+      color: #555;
+      margin-bottom: 40px;
+    }
+    .connection-status.connected { color: #4ade80; }
+    .connection-status.disconnected { color: #f87171; }
+
+    /* Aggregate orb */
+    .aggregate-orb {
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      margin-bottom: 50px;
+      transition: background 0.6s ease, box-shadow 0.6s ease;
+      position: relative;
+    }
+
+    .aggregate-orb .state-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .aggregate-orb .session-count {
+      font-size: 0.7rem;
+      margin-top: 6px;
+      opacity: 0.7;
+    }
+
+    /* Pulse animation */
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.05); opacity: 0.85; }
+    }
+
+    .aggregate-orb.pulsing {
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    /* Session cards */
+    .sessions-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      justify-content: center;
+      max-width: 800px;
+      width: 100%;
+    }
+
+    .session-card {
+      background: #151520;
+      border: 1px solid #252535;
+      border-radius: 12px;
+      padding: 20px;
+      min-width: 200px;
+      flex: 1;
+      max-width: 250px;
+      transition: border-color 0.4s ease, box-shadow 0.4s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .session-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      transition: background 0.4s ease;
+    }
+
+    .session-card .session-id {
+      font-size: 0.7rem;
+      color: #666;
+      font-family: monospace;
+      margin-bottom: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .session-card .state-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 8px;
+      transition: background 0.4s ease;
+    }
+
+    .session-card .state-name {
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+
+    .session-card .state-row {
+      display: flex;
+      align-items: center;
+    }
+
+    .session-card .timestamp {
+      font-size: 0.65rem;
+      color: #555;
+      margin-top: 10px;
+    }
+
+    /* State colors */
+    .state-off         { --c: #333; }
+    .state-idle        { --c: #2d5a3a; }
+    .state-working     { --c: #1e90ff; }
+    .state-tool_active { --c: #3b82f6; }
+    .state-awaiting_input { --c: #f59e0b; }
+    .state-awaiting_permission { --c: #a855f7; }
+    .state-notification { --c: #c084fc; }
+    .state-error       { --c: #ef4444; }
+
+    .aggregate-orb.state-off { background: radial-gradient(circle, #1a1a1a, #0a0a0f); box-shadow: none; }
+    .aggregate-orb.state-idle { background: radial-gradient(circle, #1a3a2a, #0a0a0f); box-shadow: 0 0 40px #2d5a3a44; }
+    .aggregate-orb.state-working { background: radial-gradient(circle, #0a2a5a, #0a0a0f); box-shadow: 0 0 60px #1e90ff33; }
+    .aggregate-orb.state-tool_active { background: radial-gradient(circle, #0a2a5a, #0a0a0f); box-shadow: 0 0 60px #3b82f644; }
+    .aggregate-orb.state-awaiting_input { background: radial-gradient(circle, #3a2a0a, #0a0a0f); box-shadow: 0 0 60px #f59e0b44; }
+    .aggregate-orb.state-awaiting_permission { background: radial-gradient(circle, #2a0a3a, #0a0a0f); box-shadow: 0 0 80px #a855f755; }
+    .aggregate-orb.state-notification { background: radial-gradient(circle, #2a0a3a, #0a0a0f); box-shadow: 0 0 80px #c084fc55; }
+    .aggregate-orb.state-error { background: radial-gradient(circle, #3a0a0a, #0a0a0f); box-shadow: 0 0 80px #ef444466; }
+
+    .session-card::before { background: var(--c); }
+    .session-card { border-color: color-mix(in srgb, var(--c) 30%, #252535); }
+    .state-dot { background: var(--c); }
+
+    /* Empty state */
+    .empty {
+      color: #444;
+      font-size: 0.85rem;
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    /* Event log */
+    .event-log {
+      margin-top: 50px;
+      width: 100%;
+      max-width: 600px;
+    }
+
+    .event-log h2 {
+      font-size: 0.8rem;
+      color: #555;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .log-entry {
+      font-family: monospace;
+      font-size: 0.72rem;
+      color: #666;
+      padding: 4px 0;
+      border-bottom: 1px solid #151520;
+      display: flex;
+      gap: 12px;
+    }
+
+    .log-entry .log-time { color: #444; min-width: 65px; }
+    .log-entry .log-state { font-weight: 500; }
+  </style>
+</head>
+<body>
+  <h1>Claude Recall</h1>
+  <div class="connection-status disconnected" id="connStatus">connecting...</div>
+
+  <div class="aggregate-orb state-off" id="orb">
+    <span class="state-label" id="orbLabel">off</span>
+    <span class="session-count" id="orbCount"></span>
+  </div>
+
+  <div class="sessions-grid" id="sessionsGrid"></div>
+  <div class="empty" id="emptyMsg">No active sessions</div>
+
+  <div class="event-log">
+    <h2>Event Log</h2>
+    <div id="logEntries"></div>
+  </div>
+
+  <script>
+    const STATE_NAMES = {
+      0: 'off', 10: 'idle', 30: 'working', 40: 'tool_active',
+      60: 'awaiting_input', 80: 'awaiting_permission', 85: 'notification', 100: 'error'
+    };
+
+    const STATE_DISPLAY = {
+      'off': 'Off',
+      'idle': 'Idle',
+      'working': 'Working',
+      'tool_active': 'Running Tool',
+      'awaiting_input': 'Awaiting Input',
+      'awaiting_permission': 'Needs Permission',
+      'notification': 'Notification',
+      'error': 'Error'
+    };
+
+    const PULSE_STATES = new Set(['working', 'tool_active', 'awaiting_permission', 'notification', 'error']);
+
+    let sessions = {};
+    let ws;
+    let reconnectTimer;
+
+    function connect() {
+      ws = new WebSocket('ws://127.0.0.1:8765/ws?mode=all');
+
+      ws.onopen = () => {
+        document.getElementById('connStatus').textContent = 'connected';
+        document.getElementById('connStatus').className = 'connection-status connected';
+        // Fetch initial state
+        fetch('http://127.0.0.1:8765/sessions')
+          .then(r => r.json())
+          .then(data => {
+            sessions = {};
+            for (const [id, state] of Object.entries(data.sessions || {})) {
+              sessions[id] = { state, lastChange: new Date() };
+            }
+            renderSessions();
+          })
+          .catch(() => {});
+        fetch('http://127.0.0.1:8765/state')
+          .then(r => r.json())
+          .then(data => updateOrb(data.state, data.active_sessions))
+          .catch(() => {});
+      };
+
+      ws.onmessage = (event) => {
+        const frame = JSON.parse(event.data);
+        handleFrame(frame);
+      };
+
+      ws.onclose = () => {
+        document.getElementById('connStatus').textContent = 'disconnected — reconnecting...';
+        document.getElementById('connStatus').className = 'connection-status disconnected';
+        reconnectTimer = setTimeout(connect, 2000);
+      };
+
+      ws.onerror = () => ws.close();
+    }
+
+    function handleFrame(frame) {
+      if (frame.type === 'aggregate') {
+        const stateName = typeof frame.state === 'number' ? STATE_NAMES[frame.state] : frame.state;
+        updateOrb(stateName, frame.active_sessions);
+        addLog(null, stateName, frame.timestamp);
+      } else if (frame.type === 'session') {
+        const stateName = typeof frame.state === 'number' ? STATE_NAMES[frame.state] : frame.state;
+        const prevName = typeof frame.previous === 'number' ? STATE_NAMES[frame.previous] : frame.previous;
+
+        if (stateName === 'off') {
+          delete sessions[frame.session_id];
+        } else {
+          sessions[frame.session_id] = { state: stateName, lastChange: new Date(frame.timestamp) };
+        }
+        renderSessions();
+        addLog(frame.session_id, stateName, frame.timestamp);
+      }
+    }
+
+    function updateOrb(state, count) {
+      const orb = document.getElementById('orb');
+      orb.className = `aggregate-orb state-${state}` + (PULSE_STATES.has(state) ? ' pulsing' : '');
+      document.getElementById('orbLabel').textContent = STATE_DISPLAY[state] || state;
+      document.getElementById('orbCount').textContent = count > 0 ? `${count} session${count > 1 ? 's' : ''}` : '';
+    }
+
+    function renderSessions() {
+      const grid = document.getElementById('sessionsGrid');
+      const empty = document.getElementById('emptyMsg');
+      const entries = Object.entries(sessions);
+
+      if (entries.length === 0) {
+        grid.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+      }
+
+      empty.style.display = 'none';
+      grid.innerHTML = entries.map(([id, info]) => {
+        const shortId = id.length > 20 ? id.slice(0, 8) + '...' + id.slice(-6) : id;
+        const time = info.lastChange ? new Date(info.lastChange).toLocaleTimeString() : '';
+        return `
+          <div class="session-card state-${info.state}">
+            <div class="session-id" title="${id}">${shortId}</div>
+            <div class="state-row">
+              <span class="state-dot"></span>
+              <span class="state-name">${STATE_DISPLAY[info.state] || info.state}</span>
+            </div>
+            <div class="timestamp">${time}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function addLog(sessionId, state, timestamp) {
+      const container = document.getElementById('logEntries');
+      const time = timestamp ? new Date(timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+      const prefix = sessionId ? `[${sessionId.slice(0, 8)}]` : '[aggregate]';
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `
+        <span class="log-time">${time}</span>
+        <span class="log-state" style="color: var(--c)">${prefix}</span>
+        <span class="state-${state}">${STATE_DISPLAY[state] || state}</span>
+      `;
+      container.insertBefore(entry, container.firstChild);
+
+      // Keep max 30 entries
+      while (container.children.length > 30) {
+        container.removeChild(container.lastChild);
+      }
+    }
+
+    connect();
+  </script>
+</body>
+</html>
