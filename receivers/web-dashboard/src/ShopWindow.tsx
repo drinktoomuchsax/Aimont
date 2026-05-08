@@ -1,3 +1,4 @@
+import { useRef, useState, useEffect } from 'react'
 import { SessionState, StateHistoryEntry, STATE_DISPLAY, EFFORT_COLORS, parseModel } from './types'
 
 interface Props {
@@ -15,7 +16,7 @@ const STATE_CSS_COLOR: Record<string, string> = {
   error: '#e85d5d',
 }
 
-const TIMELINE_ROW_WIDTH = 40
+const BLOCK_SIZE = 8 // px per block (6px block + 2px gap)
 
 export default function SessionRow({ session }: Props) {
   const meta = session.metadata
@@ -86,11 +87,26 @@ export default function SessionRow({ session }: Props) {
 }
 
 function Timeline({ history }: { history: StateHistoryEntry[] }) {
-  // Split into rows of TIMELINE_ROW_WIDTH, odd rows reversed (S-shape / boustrophedon)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [rowWidth, setRowWidth] = useState(50)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const measure = () => {
+      const w = el.clientWidth
+      setRowWidth(Math.max(10, Math.floor(w / BLOCK_SIZE)))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Split into rows, odd rows reversed (S-shape)
   const rows: StateHistoryEntry[][] = []
-  for (let i = 0; i < history.length; i += TIMELINE_ROW_WIDTH) {
-    const row = history.slice(i, i + TIMELINE_ROW_WIDTH)
-    // Odd rows: reverse direction (snake going back)
+  for (let i = 0; i < history.length; i += rowWidth) {
+    const row = history.slice(i, i + rowWidth)
     if (rows.length % 2 === 1) row.reverse()
     rows.push(row)
   }
@@ -98,13 +114,13 @@ function Timeline({ history }: { history: StateHistoryEntry[] }) {
   const lastIdx = history.length - 1
 
   return (
-    <div className="timeline">
+    <div className="timeline" ref={containerRef}>
       {rows.map((row, ri) => (
         <div key={ri} className={`tl-row ${ri % 2 === 1 ? 'tl-row-rev' : ''}`}>
           {row.map((entry, ci) => {
             const globalIdx = ri % 2 === 1
-              ? ri * TIMELINE_ROW_WIDTH + (row.length - 1 - ci)
-              : ri * TIMELINE_ROW_WIDTH + ci
+              ? ri * rowWidth + (row.length - 1 - ci)
+              : ri * rowWidth + ci
             const isLast = globalIdx === lastIdx
             return (
               <span
