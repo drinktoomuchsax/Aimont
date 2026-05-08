@@ -61,11 +61,15 @@ class StateDurations(BaseModel):
     error: float = 0.0
 
 
+DEFAULT_AGENT_KIND = "claude"
+
+
 class StateFrame(BaseModel):
     """Per-session state frame."""
 
     type: str = "session"
     session_id: str
+    agent_kind: str = DEFAULT_AGENT_KIND
     state: RecallState
     previous: RecallState
     duration: float | None = None

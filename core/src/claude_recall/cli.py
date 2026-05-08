@@ -115,11 +115,12 @@ def watch(
                 state = RecallState(state).name.lower()
             icon = STATE_ICONS.get(state, "  ")
             sid = frame.get("session_id", "?")
+            kind = frame.get("agent_kind", "claude")
             prev = frame.get("previous", "")
             if isinstance(prev, int):
                 from claude_recall.models import RecallState
                 prev = RecallState(prev).name.lower()
-            typer.echo(f"  {ts}  {icon} [{sid}] {prev} → {state}")
+            typer.echo(f"  {ts}  {icon} [{kind}:{sid}] {prev} → {state}")
 
     asyncio.run(_watch())
 
@@ -137,11 +138,39 @@ def sessions(
         if not data["sessions"]:
             typer.echo("No active sessions.")
         else:
-            for sid, state in data["sessions"].items():
-                typer.echo(f"  {sid}: {state}")
+            for sid, info in data["sessions"].items():
+                if isinstance(info, dict):
+                    state = info.get("state", "?")
+                    kind = info.get("agent_kind", "claude")
+                    typer.echo(f"  [{kind}] {sid}: {state}")
+                else:
+                    typer.echo(f"  {sid}: {info}")
     except httpx.ConnectError:
         typer.echo("Daemon is not running.", err=True)
         raise typer.Exit(1)
+
+
+@app.command(name="codex-probe")
+def codex_probe(
+    port: int = typer.Option(8765, help="Daemon port"),
+    poll: float = typer.Option(2.0, help="Poll interval (seconds)"),
+    busy_cpu: float = typer.Option(10.0, help="CPU%% threshold that counts as 'working'"),
+    idle_after: float = typer.Option(6.0, help="Seconds of quiet CPU before emitting Stop"),
+):
+    """Watch for Codex CLI processes and report their state to the daemon."""
+    from claude_recall.codex_probe import CodexProbe
+
+    probe = CodexProbe(
+        daemon_url=f"http://127.0.0.1:{port}/events",
+        poll_sec=poll,
+        busy_threshold=busy_cpu,
+        idle_after_sec=idle_after,
+    )
+    typer.echo(f"Codex probe running (poll={poll}s, busy_cpu>={busy_cpu}%, idle_after={idle_after}s). Ctrl+C to stop.")
+    try:
+        probe.run_forever()
+    except KeyboardInterrupt:
+        typer.echo("\nStopped.")
 
 
 @app.command()
