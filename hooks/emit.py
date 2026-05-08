@@ -123,6 +123,14 @@ def main():
         event_name = payload.get("hook_event_name") or payload.get("event") or ""
         session_id = payload.get("session_id") or "default"
 
+        # Refine Notification into more specific events based on notification_type
+        if event_name == "Notification":
+            ntype = payload.get("notification_type") or ""
+            if ntype == "idle_prompt":
+                event_name = "Stop"
+            elif ntype == "permission_prompt":
+                event_name = "PermissionRequest"
+
         metadata = _extract_metadata(payload, event_name)
 
         body = json.dumps({
