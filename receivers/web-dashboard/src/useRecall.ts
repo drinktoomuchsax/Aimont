@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { SessionState, AggregateState, STATE_NAMES } from './types'
+import { SessionState, SessionMetadata, AggregateState, STATE_NAMES } from './types'
 
 const WS_URL = 'ws://127.0.0.1:8765/ws?mode=all'
 const API_BASE = 'http://127.0.0.1:8765'
@@ -31,13 +31,15 @@ export function useRecall() {
         .then(r => r.json())
         .then(data => {
           const initial: Record<string, SessionState> = {}
-          for (const [id, state] of Object.entries(data.sessions ?? {})) {
+          for (const [id, entry] of Object.entries(data.sessions ?? {})) {
+            const info = entry as { state: string; metadata?: SessionMetadata }
             initial[id] = {
               id,
-              state: state as string,
+              state: info.state,
               previousState: 'off',
               lastChange: new Date(),
               eventCount: 0,
+              metadata: info.metadata,
             }
           }
           setSessions(initial)
@@ -67,24 +69,27 @@ export function useRecall() {
         })
       } else if (frame.type === 'session') {
         const state = resolveState(frame.state)
-        const prev = resolveState(frame.previous)
+        const previousState = resolveState(frame.previous)
         const sid = frame.session_id
 
         if (state === 'off') {
-          setSessions(prev => {
-            const next = { ...prev }
+          setSessions(curr => {
+            const next = { ...curr }
             delete next[sid]
             return next
           })
         } else {
-          setSessions(prev => ({
-            ...prev,
+          setSessions(curr => ({
+            ...curr,
             [sid]: {
               id: sid,
               state,
-              previousState: prev[sid]?.state ?? prev,
+              previousState: curr[sid]?.state ?? previousState,
               lastChange: new Date(frame.timestamp),
-              eventCount: (prev[sid]?.eventCount ?? 0) + 1,
+              eventCount: (curr[sid]?.eventCount ?? 0) + 1,
+              metadata: frame.metadata ?? curr[sid]?.metadata,
+              duration: frame.duration,
+              durations: frame.durations ?? curr[sid]?.durations,
             },
           }))
         }

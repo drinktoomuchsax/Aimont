@@ -1,47 +1,33 @@
 import { useRecall } from './useRecall'
-import ShopWindow from './ShopWindow'
-import Legend from './Legend'
-import { STATE_COLORS, STATE_DISPLAY } from './types'
+import SessionRow from './ShopWindow'
+import { STATE_DISPLAY } from './types'
 
 function App() {
   const { sessions, aggregate, connected } = useRecall()
   const sessionList = Object.values(sessions)
-  const aggColor = STATE_COLORS[aggregate.state] ?? '#333'
 
   return (
     <div className="app">
-      <header className="header">
-        <h1>Claude Recall</h1>
-        <div className={`connection ${connected ? 'on' : 'off'}`}>
-          {connected ? 'Live' : 'Reconnecting...'}
-        </div>
-      </header>
-
-      {/* Street view: aggregate neon sign */}
-      <div className="street-sign" style={{ '--glow': aggColor } as React.CSSProperties}>
-        <div className="sign-text">
-          {STATE_DISPLAY[aggregate.state] ?? aggregate.state}
-        </div>
-        <div className="sign-sub">
-          {aggregate.activeSessions === 0
-            ? 'All shops closed'
-            : `${aggregate.activeSessions} shop${aggregate.activeSessions > 1 ? 's' : ''} open`}
-        </div>
+      {/* Top bar */}
+      <div className="topbar">
+        <span className="topbar-title">claude-recall</span>
+        <span className="topbar-sep">│</span>
+        <span className="topbar-agg">{STATE_DISPLAY[aggregate.state] ?? aggregate.state}</span>
+        <span className="topbar-sep">│</span>
+        <span className="topbar-count">{aggregate.activeSessions} sessions</span>
+        <span className="topbar-spacer" />
+        <span className={`topbar-conn ${connected ? 'on' : ''}`}>
+          {connected ? '● connected' : '○ reconnecting'}
+        </span>
       </div>
 
-      {/* Legend */}
-      <Legend />
-
-      {/* Shop windows row */}
-      <div className="shop-street">
+      {/* Session panels */}
+      <div className="panels">
         {sessionList.length === 0 ? (
-          <div className="empty-street">
-            <p>The street is quiet...</p>
-            <p className="hint">Start a Claude Code session to see shops appear</p>
-          </div>
+          <div className="empty">No active sessions</div>
         ) : (
-          sessionList.map((session, i) => (
-            <ShopWindow key={session.id} session={session} themeIndex={i} />
+          sessionList.map(session => (
+            <SessionRow key={session.id} session={session} />
           ))
         )}
       </div>
