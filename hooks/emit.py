@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Hook shim: reads Claude Code event JSON from stdin, POSTs to daemon.
+"""Hook shim: reads Claude Code hook JSON from stdin, POSTs to daemon.
 
-This script is called by Claude Code hooks. It must:
+Claude Code passes JSON to hooks via stdin with fields including:
+  session_id, hook_event_name, cwd, transcript_path, etc.
+
+This script extracts the event and session_id, and forwards to the daemon.
+It auto-starts the daemon if not running.
+
+Requirements:
 - Complete in <500ms
 - Never fail in a way that blocks Claude Code (always exit 0)
-- Be dependency-free (uses only stdlib)
-- Auto-start daemon if not running
+- Dependency-free (uses only stdlib)
 """
 
 import json
@@ -30,22 +35,16 @@ def _daemon_alive() -> bool:
 
 
 def _start_daemon():
-    """Start daemon in background. Fire-and-forget."""
     os.makedirs(os.path.dirname(PIDFILE), exist_ok=True)
 
-    # Find the uv/claude-recall executable
     claude_recall = os.path.expanduser("~/Claude-Recall/.venv/bin/claude-recall")
     if not os.path.exists(claude_recall):
-        # Fallback: try uv run
-        claude_recall = None
-
-    if claude_recall:
-        cmd = [claude_recall, "daemon"]
-    else:
         uv = os.path.expanduser("~/.local/bin/uv")
         if not os.path.exists(uv):
             uv = "uv"
         cmd = [uv, "run", "--project", os.path.expanduser("~/Claude-Recall"), "claude-recall", "daemon"]
+    else:
+        cmd = [claude_recall, "daemon"]
 
     proc = subprocess.Popen(
         cmd,
@@ -65,8 +64,16 @@ def main():
             return
 
         payload = json.loads(raw)
-        event_name = payload.get("event") or payload.get("hook", "")
-        body = json.dumps({"event": event_name, "raw": payload}).encode()
+
+        # Claude Code provides hook_event_name and session_id in stdin JSON
+        event_name = payload.get("hook_event_name") or payload.get("event") or ""
+        session_id = payload.get("session_id") or "default"
+
+        body = json.dumps({
+            "event": event_name,
+            "session_id": session_id,
+            "raw": payload,
+        }).encode()
 
         req = urllib.request.Request(
             DAEMON_URL,
@@ -78,7 +85,6 @@ def main():
         try:
             urllib.request.urlopen(req, timeout=TIMEOUT_SEC)
         except (urllib.error.URLError, ConnectionRefusedError, OSError):
-            # Daemon not running — start it and retry once
             _start_daemon()
             import time
             time.sleep(0.3)
