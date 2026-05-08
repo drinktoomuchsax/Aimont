@@ -1,4 +1,4 @@
-"""Priority-based state machine with TTL degradation."""
+"""Priority-based state machine with TTL degradation and duration tracking."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import asyncio
 from datetime import datetime, timezone
 
 from claude_recall.config import StatesConfig
-from claude_recall.models import RecallState
+from claude_recall.models import RecallState, StateDurations
 
 
 STATE_NAME_MAP: dict[str, RecallState] = {s.name.lower(): s for s in RecallState}
@@ -21,6 +21,8 @@ class StateMachine:
         self._config = config
         self._current: RecallState = RecallState.OFF
         self._set_at: datetime = datetime.now(timezone.utc)
+        self._durations: dict[str, float] = {}
+        self._last_duration: float = 0.0
         self._lock = asyncio.Lock()
 
     @property
@@ -37,6 +39,15 @@ class StateMachine:
     @property
     def state_since(self) -> datetime:
         return self._set_at
+
+    @property
+    def durations(self) -> StateDurations:
+        """Cumulative durations including time in current state."""
+        d = dict(self._durations)
+        current_name = self._current.name.lower()
+        elapsed = (datetime.now(timezone.utc) - self._set_at).total_seconds()
+        d[current_name] = d.get(current_name, 0.0) + elapsed
+        return StateDurations(**d)
 
     async def transition(self, new_state: RecallState) -> tuple[RecallState, bool]:
         """
@@ -70,9 +81,20 @@ class StateMachine:
             old = self.effective_state
             return self._apply(new_state, old)
 
+    def last_duration(self) -> float:
+        """Duration of the previous state (seconds). Call after a transition."""
+        return self._last_duration
+
     def _apply(self, new_state: RecallState, old: RecallState) -> tuple[RecallState, bool]:
+        now = datetime.now(timezone.utc)
+        elapsed = (now - self._set_at).total_seconds()
+        # Accumulate duration for the state we're leaving
+        old_name = self._current.name.lower()
+        self._durations[old_name] = self._durations.get(old_name, 0.0) + elapsed
+        self._last_duration = elapsed
+        # Move to new state
         self._current = new_state
-        self._set_at = datetime.now(timezone.utc)
+        self._set_at = now
         return new_state, new_state != old
 
     def _is_expired(self) -> bool:

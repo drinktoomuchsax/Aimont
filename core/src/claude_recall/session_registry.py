@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 
+from typing import Any
+
 from claude_recall.config import StatesConfig
-from claude_recall.models import AggregateFrame, HookEvent, RecallState, StateFrame
+from claude_recall.models import AggregateFrame, HookEvent, RecallState, SessionMetadata, StateFrame
 from claude_recall.state_machine import StateMachine
 
 
@@ -14,12 +16,18 @@ class SessionRegistry:
     def __init__(self, states_config: StatesConfig, session_timeout_sec: float = 3600.0):
         self._states_config = states_config
         self._sessions: dict[str, StateMachine] = {}
+        self._metadata: dict[str, SessionMetadata] = {}
         self._last_active: dict[str, datetime] = {}
         self._timeout_sec = session_timeout_sec
         self._lock = asyncio.Lock()
 
     async def handle_transition(
-        self, session_id: str, target_state: RecallState, hook_event: HookEvent, force: bool = False
+        self,
+        session_id: str,
+        target_state: RecallState,
+        hook_event: HookEvent,
+        force: bool = False,
+        metadata: dict[str, Any] | None = None,
     ) -> tuple[StateFrame | None, AggregateFrame | None]:
         """
         Process a state transition for a session.
@@ -31,6 +39,7 @@ class SessionRegistry:
                 return self._remove_session(session_id, hook_event)
 
             sm = self._get_or_create(session_id)
+            meta = self._merge_metadata(session_id, metadata)
             old_aggregate = self._compute_aggregate_state()
 
             previous = sm.effective_state
@@ -47,7 +56,10 @@ class SessionRegistry:
                     session_id=session_id,
                     state=target_state,
                     previous=previous,
+                    duration=sm.last_duration(),
                     triggered_by=hook_event,
+                    metadata=meta,
+                    durations=sm.durations,
                     timestamp=datetime.now(timezone.utc),
                 )
 
@@ -69,12 +81,31 @@ class SessionRegistry:
                 return None
             return sm.effective_state
 
-    async def list_sessions(self) -> dict[str, str]:
+    async def get_session_info(self, session_id: str) -> dict[str, Any] | None:
         async with self._lock:
-            return {
-                sid: sm.effective_state.name.lower()
-                for sid, sm in self._sessions.items()
+            sm = self._sessions.get(session_id)
+            if sm is None:
+                return None
+            meta = self._metadata.get(session_id)
+            result: dict[str, Any] = {
+                "session_id": session_id,
+                "state": sm.effective_state.name.lower(),
+                "durations": sm.durations.model_dump(),
             }
+            if meta:
+                result["metadata"] = meta.model_dump(exclude_none=True)
+            return result
+
+    async def list_sessions(self) -> dict[str, Any]:
+        async with self._lock:
+            result = {}
+            for sid, sm in self._sessions.items():
+                entry: dict[str, Any] = {"state": sm.effective_state.name.lower()}
+                meta = self._metadata.get(sid)
+                if meta:
+                    entry["metadata"] = meta.model_dump(exclude_none=True)
+                result[sid] = entry
+            return result
 
     async def cleanup_expired(self) -> list[str]:
         """Remove sessions that haven't been active within timeout. Returns removed session IDs."""
@@ -87,6 +118,7 @@ class SessionRegistry:
             for sid in expired:
                 del self._sessions[sid]
                 del self._last_active[sid]
+                self._metadata.pop(sid, None)
             return expired
 
     def _get_or_create(self, session_id: str) -> StateMachine:
@@ -95,20 +127,33 @@ class SessionRegistry:
             self._last_active[session_id] = datetime.now(timezone.utc)
         return self._sessions[session_id]
 
+    def _merge_metadata(self, session_id: str, incoming: dict[str, Any] | None) -> SessionMetadata:
+        existing = self._metadata.get(session_id, SessionMetadata())
+        if incoming:
+            for field, value in incoming.items():
+                if value is not None and hasattr(existing, field):
+                    setattr(existing, field, value)
+        self._metadata[session_id] = existing
+        return existing
+
     def _remove_session(
         self, session_id: str, hook_event: HookEvent
     ) -> tuple[StateFrame | None, AggregateFrame | None]:
         sm = self._sessions.pop(session_id, None)
         self._last_active.pop(session_id, None)
+        self._metadata.pop(session_id, None)
 
         session_frame = None
         if sm is not None:
             previous = sm.effective_state
+            sm._apply(RecallState.OFF, previous)
             session_frame = StateFrame(
                 session_id=session_id,
                 state=RecallState.OFF,
                 previous=previous,
+                duration=sm.last_duration(),
                 triggered_by=hook_event,
+                durations=sm.durations,
                 timestamp=datetime.now(timezone.utc),
             )
 

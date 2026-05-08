@@ -18,7 +18,30 @@ Emitted when a single session's state changes:
   "session_id": "abc123",
   "state": 60,
   "previous": 30,
+  "duration": 12.5,
   "triggered_by": "Stop",
+  "metadata": {
+    "cwd": "/home/user/my-project",
+    "project": "my-project",
+    "model": "claude-sonnet-4-20250514",
+    "prompt": "Fix the login bug in auth.py",
+    "tool_name": null,
+    "tool_context": null,
+    "effort_level": "high",
+    "agent_id": null,
+    "agent_type": null,
+    "error_type": null
+  },
+  "durations": {
+    "off": 0.0,
+    "idle": 2.1,
+    "working": 45.3,
+    "tool_active": 18.7,
+    "awaiting_input": 120.0,
+    "awaiting_permission": 0.0,
+    "notification": 0.0,
+    "error": 0.0
+  },
   "timestamp": "2026-05-08T12:00:00Z"
 }
 ```
@@ -29,8 +52,43 @@ Emitted when a single session's state changes:
 | `session_id` | string | Unique identifier for the Claude Code session |
 | `state` | integer | New state value (see States below) |
 | `previous` | integer | State before this transition |
+| `duration` | float \| null | How long the **previous** state lasted (seconds) |
 | `triggered_by` | string \| null | The Claude Code hook event that caused the transition |
+| `metadata` | object \| null | Cumulative session metadata (see below) |
+| `durations` | object \| null | Cumulative time spent in each state since session start (seconds) |
 | `timestamp` | ISO 8601 | When the transition occurred |
+
+### State Durations
+
+The `durations` object tracks total time spent in each state for the session's lifetime. Updated on every state transition.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `off` | float | Seconds in OFF state |
+| `idle` | float | Seconds in IDLE state |
+| `working` | float | Seconds in WORKING state |
+| `tool_active` | float | Seconds in TOOL_ACTIVE state |
+| `awaiting_input` | float | Seconds in AWAITING_INPUT state |
+| `awaiting_permission` | float | Seconds in AWAITING_PERMISSION state |
+| `notification` | float | Seconds in NOTIFICATION state |
+| `error` | float | Seconds in ERROR state |
+
+### Session Metadata
+
+Metadata is accumulated per session. Fields are set when first seen and updated when new non-null values arrive. Receivers always get the full snapshot — no need to maintain local state.
+
+| Field | Type | Updated on | Description |
+|-------|------|------------|-------------|
+| `cwd` | string\|null | Every event | Working directory |
+| `project` | string\|null | Every event | Last path segment of cwd (project name) |
+| `model` | string\|null | SessionStart | Model identifier (e.g. `claude-sonnet-4-20250514`) |
+| `prompt` | string\|null | UserPromptSubmit | Last user message (max 100 chars) |
+| `tool_name` | string\|null | PreToolUse/PostToolUse | Current/last tool name (Bash, Edit, Read, etc.) |
+| `tool_context` | string\|null | PreToolUse/PostToolUse | Key tool_input value — file path, command, or URL (max 200 chars) |
+| `effort_level` | string\|null | Events with effort | Thinking effort (low/medium/high/xhigh/max) |
+| `agent_id` | string\|null | Subagent events | Subagent identifier |
+| `agent_type` | string\|null | Subagent events | Subagent type name |
+| `error_type` | string\|null | StopFailure | Error classification (rate_limit, server_error, etc.) |
 
 ### Aggregate Frame
 
@@ -115,7 +173,12 @@ Content-Type: application/json
 
 {
   "event": "Stop",
-  "session_id": "abc123"
+  "session_id": "abc123",
+  "metadata": {
+    "cwd": "/home/user/my-project",
+    "project": "my-project",
+    "effort_level": "high"
+  }
 }
 ```
 
@@ -123,6 +186,7 @@ Content-Type: application/json
 |-------|------|----------|-------------|
 | `event` | string | yes | Claude Code hook event name |
 | `session_id` | string | no | Session identifier (defaults to `"default"`) |
+| `metadata` | object | no | Session metadata fields (see Session Metadata) |
 | `raw` | object | no | Raw hook payload for debugging |
 
 Response:
@@ -153,7 +217,7 @@ Response:
 
 ### GET /sessions
 
-List all active sessions.
+List all active sessions with metadata.
 
 ```
 GET http://127.0.0.1:8765/sessions
@@ -164,15 +228,29 @@ Response:
 ```json
 {
   "sessions": {
-    "abc123": "working",
-    "def456": "awaiting_permission"
+    "abc123": {
+      "state": "working",
+      "metadata": {
+        "project": "my-app",
+        "model": "claude-sonnet-4-20250514",
+        "prompt": "Fix the login bug"
+      }
+    },
+    "def456": {
+      "state": "awaiting_permission",
+      "metadata": {
+        "project": "api-server",
+        "tool_name": "Bash",
+        "tool_context": "rm -rf node_modules"
+      }
+    }
   }
 }
 ```
 
 ### GET /sessions/{session_id}
 
-Get a specific session's state.
+Get a specific session's state and metadata.
 
 ```
 GET http://127.0.0.1:8765/sessions/abc123
@@ -181,7 +259,26 @@ GET http://127.0.0.1:8765/sessions/abc123
 Response:
 
 ```json
-{"session_id": "abc123", "state": "working"}
+{
+  "session_id": "abc123",
+  "state": "working",
+  "metadata": {
+    "cwd": "/home/user/my-app",
+    "project": "my-app",
+    "model": "claude-sonnet-4-20250514",
+    "prompt": "Fix the login bug"
+  },
+  "durations": {
+    "off": 0.0,
+    "idle": 3.2,
+    "working": 28.5,
+    "tool_active": 12.0,
+    "awaiting_input": 0.0,
+    "awaiting_permission": 0.0,
+    "notification": 0.0,
+    "error": 0.0
+  }
+}
 ```
 
 ## Push Transport Frame Format

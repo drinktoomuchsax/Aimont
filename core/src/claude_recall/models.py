@@ -33,6 +33,34 @@ class RecallState(IntEnum):
     ERROR = 100
 
 
+class SessionMetadata(BaseModel):
+    """Cumulative session metadata, updated incrementally."""
+
+    cwd: str | None = None
+    project: str | None = None
+    model: str | None = None
+    prompt: str | None = None
+    tool_name: str | None = None
+    tool_context: str | None = None
+    effort_level: str | None = None
+    agent_id: str | None = None
+    agent_type: str | None = None
+    error_type: str | None = None
+
+
+class StateDurations(BaseModel):
+    """Cumulative time spent in each state (seconds)."""
+
+    off: float = 0.0
+    idle: float = 0.0
+    working: float = 0.0
+    tool_active: float = 0.0
+    awaiting_input: float = 0.0
+    awaiting_permission: float = 0.0
+    notification: float = 0.0
+    error: float = 0.0
+
+
 class StateFrame(BaseModel):
     """Per-session state frame."""
 
@@ -40,7 +68,10 @@ class StateFrame(BaseModel):
     session_id: str
     state: RecallState
     previous: RecallState
+    duration: float | None = None
     triggered_by: HookEvent | None = None
+    metadata: SessionMetadata | None = None
+    durations: StateDurations | None = None
     timestamp: datetime
 
 

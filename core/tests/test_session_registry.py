@@ -108,4 +108,5 @@ async def test_list_sessions(registry):
     await registry.handle_transition("s2", RecallState.IDLE, HookEvent.SESSION_START)
 
     sessions = await registry.list_sessions()
-    assert sessions == {"s1": "working", "s2": "idle"}
+    assert sessions["s1"]["state"] == "working"
+    assert sessions["s2"]["state"] == "idle"

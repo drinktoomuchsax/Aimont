@@ -24,6 +24,7 @@ class EventPayload(BaseModel):
     event: str
     session_id: str | None = None
     tool_name: str | None = None
+    metadata: dict[str, Any] | None = None
     raw: dict[str, Any] = {}
 
 
@@ -68,7 +69,7 @@ class App:
         session_id = payload.session_id or self._default_session_id()
 
         session_frame, aggregate_frame = await self.registry.handle_transition(
-            session_id, result.state, hook_event, force=result.force
+            session_id, result.state, hook_event, force=result.force, metadata=payload.metadata
         )
 
         if session_frame:
@@ -161,10 +162,10 @@ async def get_sessions():
 @api.get("/sessions/{session_id}")
 async def get_session(session_id: str):
     app = get_app_instance()
-    state = await app.registry.get_session_state(session_id)
-    if state is None:
+    info = await app.registry.get_session_info(session_id)
+    if info is None:
         return {"error": "session not found"}
-    return {"session_id": session_id, "state": state.name.lower()}
+    return info
 
 
 @api.websocket("/ws")
