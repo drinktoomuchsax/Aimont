@@ -1,0 +1,111 @@
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { SessionState, AggregateState, STATE_NAMES } from './types'
+
+const WS_URL = 'ws://127.0.0.1:8765/ws?mode=all'
+const API_BASE = 'http://127.0.0.1:8765'
+
+function resolveState(s: number | string): string {
+  if (typeof s === 'number') return STATE_NAMES[s] ?? 'off'
+  return s
+}
+
+export function useRecall() {
+  const [sessions, setSessions] = useState<Record<string, SessionState>>({})
+  const [aggregate, setAggregate] = useState<AggregateState>({
+    state: 'off',
+    activeSessions: 0,
+    breakdown: {},
+  })
+  const [connected, setConnected] = useState(false)
+  const wsRef = useRef<WebSocket | null>(null)
+  const reconnectRef = useRef<ReturnType<typeof setTimeout>>()
+
+  const connect = useCallback(() => {
+    const ws = new WebSocket(WS_URL)
+    wsRef.current = ws
+
+    ws.onopen = () => {
+      setConnected(true)
+      // Fetch initial state
+      fetch(`${API_BASE}/sessions`)
+        .then(r => r.json())
+        .then(data => {
+          const initial: Record<string, SessionState> = {}
+          for (const [id, state] of Object.entries(data.sessions ?? {})) {
+            initial[id] = {
+              id,
+              state: state as string,
+              previousState: 'off',
+              lastChange: new Date(),
+              eventCount: 0,
+            }
+          }
+          setSessions(initial)
+        })
+        .catch(() => {})
+
+      fetch(`${API_BASE}/state`)
+        .then(r => r.json())
+        .then(data => {
+          setAggregate({
+            state: data.state,
+            activeSessions: data.active_sessions,
+            breakdown: data.breakdown ?? {},
+          })
+        })
+        .catch(() => {})
+    }
+
+    ws.onmessage = (event) => {
+      const frame = JSON.parse(event.data)
+
+      if (frame.type === 'aggregate') {
+        setAggregate({
+          state: resolveState(frame.state),
+          activeSessions: frame.active_sessions,
+          breakdown: frame.breakdown ?? {},
+        })
+      } else if (frame.type === 'session') {
+        const state = resolveState(frame.state)
+        const prev = resolveState(frame.previous)
+        const sid = frame.session_id
+
+        if (state === 'off') {
+          setSessions(prev => {
+            const next = { ...prev }
+            delete next[sid]
+            return next
+          })
+        } else {
+          setSessions(prev => ({
+            ...prev,
+            [sid]: {
+              id: sid,
+              state,
+              previousState: prev[sid]?.state ?? prev,
+              lastChange: new Date(frame.timestamp),
+              eventCount: (prev[sid]?.eventCount ?? 0) + 1,
+            },
+          }))
+        }
+      }
+    }
+
+    ws.onclose = () => {
+      setConnected(false)
+      reconnectRef.current = setTimeout(connect, 2000)
+    }
+
+    ws.onerror = () => ws.close()
+  }, [])
+
+  useEffect(() => {
+    connect()
+    return () => {
+      wsRef.current?.close()
+      if (reconnectRef.current) clearTimeout(reconnectRef.current)
+    }
+  }, [connect])
+
+  return { sessions, aggregate, connected }
+}
