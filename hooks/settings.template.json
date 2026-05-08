@@ -1,0 +1,53 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]
+      }
+    ]
+  }
+}
