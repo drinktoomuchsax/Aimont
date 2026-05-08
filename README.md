@@ -1,65 +1,156 @@
 # Claude Recall
 
-Claude Code 的人在回路状态广播系统。
+> **把人带回 Claude Code 的工作回路中。**
 
-Claude Recall 通过 hooks 监听 Claude Code 的生命周期事件，将状态变化广播给所有连接的接收方 — 灯、手机 App、桌面组件，或任何能读 WebSocket / 串口的设备。
+Claude Recall 实时追踪你所有 Claude Code session 的状态，并通过灯光、看板、手机推送等方式提醒你：Claude 完成了、需要权限了、出错了 — 不用一直盯着终端。
 
 > [English Version](./README_EN.md)
+
+![Dashboard Screenshot](./docs/assets/dashboard.png)
+<!-- 截图：打开 web dashboard，显示多个 session 的橱窗状态 -->
+
+## 它能做什么
+
+当你让 Claude Code 在后台跑任务时：
+
+- **Claude 完成了** → 橙色提醒，灯亮/通知响
+- **Claude 需要权限** → 紫色闪烁，你不批准它就卡着
+- **Claude 出错了** → 红色警告
+- **Claude 在工作** → 蓝色呼吸，安心等着就好
+
+支持同时追踪多个 Claude Code session，每个独立显示状态。
+
+## 30 秒上手
+
+```bash
+# 1. 克隆
+git clone https://github.com/yourname/Claude-Recall.git
+cd Claude-Recall
+
+# 2. 安装
+uv sync
+
+# 3. 配置 Claude Code hooks（全局生效，所有项目所有 session）
+mkdir -p ~/.claude-recall/hooks
+cp hooks/emit.py ~/.claude-recall/hooks/emit.py
+```
+
+然后把以下内容合并到你的 `~/.claude/settings.json`：
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
+    "StopFailure": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
+    "Notification": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
+    "PreToolUse": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
+    "PostToolUse": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}]
+  }
+}
+```
+
+**搞定！** Daemon 会在第一次 hook 触发时自动启动，无需手动管理。
+
+## 看板
+
+打开 Web Dashboard 实时查看所有 session 状态：
+
+```bash
+cd receivers/web-dashboard
+npm install && npx vite
+```
+
+浏览器打开 `http://localhost:5173`。
+
+![Legend](./docs/assets/legend.png)
+<!-- 截图：图例区域，展示各状态颜色和含义 -->
+
+每个 Claude Code session 显示为一个独立的"商店橱窗"，不同 session 有不同的主题风格。Claude 的状态通过颜色和动画实时反映：
+
+| 状态 | 颜色 | 动画 | 含义 |
+|------|------|------|------|
+| Idle | 暗绿 | — | 会话存在，无事发生 |
+| Working | 蓝 | 旋转 | Claude 在思考 |
+| Tool Active | 亮蓝 | 旋转 | 正在执行工具 |
+| Awaiting Input | 橙 | 弹跳 | **完成了，等你来** |
+| Needs Permission | 紫 | 脉冲发光 | **被阻塞，需要你批准** |
+| Notification | 浅紫 | 脉冲发光 | Claude 有消息 |
+| Error | 红 | 抖动 | 出错了 |
+
+## 终端监控
+
+不想开浏览器？用 CLI 实时看：
+
+```bash
+uv run claude-recall watch --mode all
+```
+
+```
+  14:05:36  💤 [abc123] off → idle
+  14:05:37  🔵 [abc123] idle → working
+  14:05:38  ⚙️  [abc123] working → tool_active
+  14:05:39  🟣 [abc123] tool_active → awaiting_permission
+  14:05:40  🔵 [abc123] awaiting_permission → working
+  14:05:41  🟡 [abc123] working → awaiting_input
+```
 
 ## 架构
 
 ```
-Claude Code ──hooks──▶ emit.py ──POST──▶ Core Daemon ──transports──▶ Receivers
-                                              │
-                                              ├── WebSocket (pull 型)
-                                              ├── Serial 串口 (push 型)
-                                              ├── MQTT (push 型)
-                                              └── Terminal bell/title
+Claude Code ──stdin JSON──▶ emit.py ──POST──▶ Core Daemon ──broadcast──▶ Receivers
+                                                   │
+                                                   ├── WebSocket (看板/App 连接)
+                                                   ├── Serial (USB 灯)
+                                                   ├── MQTT (IoT 设备)
+                                                   └── Terminal (bell/title)
 ```
 
-**Core** 只负责计算状态。**Receivers** 自己决定怎么呈现。
-
-## 状态
-
-| 状态 | 值 | 含义 |
-|------|-----|------|
-| OFF | 0 | 无活跃会话 |
-| IDLE | 10 | 会话存在，无事发生 |
-| WORKING | 30 | Claude 正在思考/生成 |
-| TOOL_ACTIVE | 40 | Claude 正在执行工具 |
-| AWAITING_INPUT | 60 | 任务完成，等你给下一条指令 |
-| AWAITING_PERMISSION | 80 | 被权限请求阻塞，等你批准 |
-| NOTIFICATION | 85 | Claude 发了一条通知 |
-| ERROR | 100 | 出错了 |
-
-## 快速开始
-
-```bash
-# 安装 core
-cd core && uv pip install -e .
-
-# 启动 daemon
-claude-recall daemon
-
-# 安装 hooks（复制 emit.py 到本地，提示你如何配置 Claude Code）
-cd ../hooks && bash install.sh --global
-
-# 测试
-claude-recall test awaiting_input
-```
+- **emit.py** — 零依赖 shim，读取 Claude Code hook 的 stdin（含 session_id），转发给 daemon。首次触发自动拉起 daemon。
+- **Core Daemon** — 维护每个 session 的状态机，广播状态帧。不关心颜色/声音，只算状态。
+- **Receivers** — 各自连接 daemon，自己决定怎么呈现状态（颜色、动画、声音）。
 
 ## 仓库结构
 
 ```
-core/        状态机 + 广播 daemon (Python)
-hooks/       Claude Code hook 对接（emit shim + 安装器）
-receivers/   接收方实现（灯、App、桌面组件等）
-docs/        协议文档（给 receiver 开发者看）
+core/                状态机 + 广播 daemon (Python)
+hooks/               Claude Code hook 对接
+receivers/
+  └── web-dashboard/ 浏览器看板 (React + TypeScript)
+  └── (more)         USB 灯、Flutter App、WLED...
+docs/
+  └── protocol.md    状态帧协议（给 receiver 开发者看）
+```
+
+## CLI 命令
+
+```bash
+claude-recall daemon              # 启动 daemon（一般不需要手动，hook 会自动拉起）
+claude-recall status              # 查看聚合状态
+claude-recall sessions            # 列出所有活跃 session
+claude-recall watch [--mode all]  # 实时监控
+claude-recall test <state> [-s id] # 测试状态转换
 ```
 
 ## 开发一个 Receiver
 
-连接 `ws://127.0.0.1:8765/ws`，解析 JSON 状态帧即可。详见 [docs/protocol.md](docs/protocol.md)。
+连接 WebSocket，解析 JSON 状态帧：
+
+```python
+import asyncio, json, websockets
+
+async def main():
+    async with websockets.connect("ws://127.0.0.1:8765/ws") as ws:
+        async for msg in ws:
+            frame = json.loads(msg)
+            print(f"State: {frame['state']}")
+
+asyncio.run(main())
+```
+
+详见 [docs/protocol.md](docs/protocol.md)。
 
 ## License
 
