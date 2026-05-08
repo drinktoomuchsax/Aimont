@@ -1,63 +1,65 @@
 # Claude Recall
 
-Human-in-the-loop state broadcast for Claude Code.
+Claude Code 的人在回路状态广播系统。
 
-Claude Recall monitors Claude Code's lifecycle via hooks and broadcasts state changes to any connected receiver — lights, phone apps, desktop widgets, or anything that can read a WebSocket or serial port.
+Claude Recall 通过 hooks 监听 Claude Code 的生命周期事件，将状态变化广播给所有连接的接收方 — 灯、手机 App、桌面组件，或任何能读 WebSocket / 串口的设备。
 
-## Architecture
+> [English Version](./README_EN.md)
+
+## 架构
 
 ```
 Claude Code ──hooks──▶ emit.py ──POST──▶ Core Daemon ──transports──▶ Receivers
                                               │
-                                              ├── WebSocket (pull)
-                                              ├── Serial (push)
-                                              ├── MQTT (push)
+                                              ├── WebSocket (pull 型)
+                                              ├── Serial 串口 (push 型)
+                                              ├── MQTT (push 型)
                                               └── Terminal bell/title
 ```
 
-**Core** computes state. **Receivers** decide how to present it.
+**Core** 只负责计算状态。**Receivers** 自己决定怎么呈现。
 
-## States
+## 状态
 
-| State | Value | Meaning |
-|-------|-------|---------|
-| OFF | 0 | No active session |
-| IDLE | 10 | Session exists, nothing happening |
-| WORKING | 30 | Claude is thinking |
-| TOOL_ACTIVE | 40 | Claude is running a tool |
-| AWAITING_INPUT | 60 | Done, waiting for your next instruction |
-| AWAITING_PERMISSION | 80 | Blocked on permission request |
-| NOTIFICATION | 85 | Claude sent a notification |
-| ERROR | 100 | Something went wrong |
+| 状态 | 值 | 含义 |
+|------|-----|------|
+| OFF | 0 | 无活跃会话 |
+| IDLE | 10 | 会话存在，无事发生 |
+| WORKING | 30 | Claude 正在思考/生成 |
+| TOOL_ACTIVE | 40 | Claude 正在执行工具 |
+| AWAITING_INPUT | 60 | 任务完成，等你给下一条指令 |
+| AWAITING_PERMISSION | 80 | 被权限请求阻塞，等你批准 |
+| NOTIFICATION | 85 | Claude 发了一条通知 |
+| ERROR | 100 | 出错了 |
 
-## Quick Start
+## 快速开始
 
 ```bash
-# Install core
-cd core && pip install -e .
+# 安装 core
+cd core && uv pip install -e .
 
-# Start daemon
+# 启动 daemon
 claude-recall daemon
 
-# Install hooks (copies emit.py, tells you what to add to Claude Code settings)
+# 安装 hooks（复制 emit.py 到本地，提示你如何配置 Claude Code）
 cd ../hooks && bash install.sh --global
 
-# Test it
+# 测试
 claude-recall test awaiting_input
 ```
 
-## Monorepo Structure
+## 仓库结构
 
 ```
-core/        State machine + broadcast daemon (Python)
-hooks/       Claude Code hook integration (emit shim + installer)
-receivers/   Consumer implementations (lights, apps, widgets)
-docs/        Protocol documentation for receiver developers
+core/        状态机 + 广播 daemon (Python)
+hooks/       Claude Code hook 对接（emit shim + 安装器）
+receivers/   接收方实现（灯、App、桌面组件等）
+docs/        协议文档（给 receiver 开发者看）
 ```
 
-## Building a Receiver
+## 开发一个 Receiver
 
-Connect to `ws://127.0.0.1:8765/ws` and parse JSON state frames. See [docs/protocol.md](docs/protocol.md) for the full spec.
+连接 `ws://127.0.0.1:8765/ws`，解析 JSON 状态帧即可。详见 [docs/protocol.md](docs/protocol.md)。
 
 ## License
 
