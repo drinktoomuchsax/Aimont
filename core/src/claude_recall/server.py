@@ -61,14 +61,14 @@ class App:
         except ValueError:
             return {"status": "unknown_event"}
 
-        target_state = self.rules.resolve(hook_event)
-        if target_state is None:
+        result = self.rules.resolve(hook_event)
+        if result is None:
             return {"status": "debounced"}
 
         session_id = payload.session_id or self._default_session_id()
 
         session_frame, aggregate_frame = await self.registry.handle_transition(
-            session_id, target_state, hook_event
+            session_id, result.state, hook_event, force=result.force
         )
 
         if session_frame:
@@ -79,7 +79,7 @@ class App:
         if not session_frame and not aggregate_frame:
             return {"status": "no_change"}
 
-        return {"status": "ok", "state": target_state.name.lower(), "session_id": session_id}
+        return {"status": "ok", "state": result.state.name.lower(), "session_id": session_id}
 
     async def _broadcast_session_frame(self, frame: StateFrame) -> None:
         for transport in self.transports:

@@ -64,6 +64,12 @@ class StateMachine:
 
             return old, False
 
+    async def force_transition(self, new_state: RecallState) -> tuple[RecallState, bool]:
+        """Force a transition regardless of priority (for user-initiated events)."""
+        async with self._lock:
+            old = self.effective_state
+            return self._apply(new_state, old)
+
     def _apply(self, new_state: RecallState, old: RecallState) -> tuple[RecallState, bool]:
         self._current = new_state
         self._set_at = datetime.now(timezone.utc)

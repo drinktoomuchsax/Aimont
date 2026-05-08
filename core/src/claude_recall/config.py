@@ -39,6 +39,7 @@ class RuleConfig(BaseModel):
     event: str
     state: str
     debounce_ms: int = 0
+    force: bool = False
 
 
 class RecallConfig(BaseModel):
@@ -49,15 +50,15 @@ class RecallConfig(BaseModel):
 
 
 DEFAULT_RULES: list[dict[str, Any]] = [
-    {"event": "SessionStart", "state": "idle"},
-    {"event": "UserPromptSubmit", "state": "working"},
+    {"event": "SessionStart", "state": "idle", "force": True},
+    {"event": "UserPromptSubmit", "state": "working", "force": True},
     {"event": "PreToolUse", "state": "tool_active", "debounce_ms": 2000},
     {"event": "PostToolUse", "state": "working", "debounce_ms": 2000},
-    {"event": "Stop", "state": "awaiting_input"},
+    {"event": "Stop", "state": "awaiting_input", "force": True},
     {"event": "Notification", "state": "notification"},
     {"event": "PermissionRequest", "state": "awaiting_permission"},
     {"event": "StopFailure", "state": "error"},
-    {"event": "SessionEnd", "state": "off"},
+    {"event": "SessionEnd", "state": "off", "force": True},
 ]
 
 DEFAULT_TRANSPORTS: dict[str, dict[str, Any]] = {

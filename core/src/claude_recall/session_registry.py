@@ -19,11 +19,12 @@ class SessionRegistry:
         self._lock = asyncio.Lock()
 
     async def handle_transition(
-        self, session_id: str, target_state: RecallState, hook_event: HookEvent
+        self, session_id: str, target_state: RecallState, hook_event: HookEvent, force: bool = False
     ) -> tuple[StateFrame | None, AggregateFrame | None]:
         """
         Process a state transition for a session.
         Returns (per-session frame if changed, aggregate frame if aggregate changed).
+        If force=True, the transition bypasses priority checks.
         """
         async with self._lock:
             if hook_event == HookEvent.SESSION_END:
@@ -33,7 +34,11 @@ class SessionRegistry:
             old_aggregate = self._compute_aggregate_state()
 
             previous = sm.effective_state
-            _, changed = await sm.transition(target_state)
+            if force:
+                await sm.force_transition(target_state)
+                changed = previous != target_state
+            else:
+                _, changed = await sm.transition(target_state)
             self._last_active[session_id] = datetime.now(timezone.utc)
 
             session_frame = None
