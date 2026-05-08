@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from typing import Any
 
-from claude_recall.models import RecallState, StateFrame
+from claude_recall.models import AggregateFrame, RecallState, StateFrame
 from claude_recall.transports import register_transport
 from claude_recall.transports.base import BaseTransport
 
@@ -43,8 +43,13 @@ class TerminalTransport(BaseTransport):
             self._set_title("")
 
     async def send(self, frame: StateFrame) -> None:
+        pass
+
+    async def send_aggregate(self, frame: AggregateFrame) -> None:
         if self._title_enabled:
             label = STATE_LABELS.get(frame.state, "")
+            if frame.active_sessions > 1:
+                label = f"{label} [{frame.active_sessions} sessions]"
             self._set_title(label)
 
         if self._bell_enabled and frame.state in BELL_STATES:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from claude_recall.models import StateFrame
+from claude_recall.models import AggregateFrame, StateFrame
 
 
 class BaseTransport(ABC):
@@ -25,5 +25,9 @@ class BaseTransport(ABC):
 
     @abstractmethod
     async def send(self, frame: StateFrame) -> None:
-        """Push a state frame through this transport."""
+        """Push a per-session state frame through this transport."""
         ...
+
+    async def send_aggregate(self, frame: AggregateFrame) -> None:
+        """Push an aggregated frame. Override for transports that distinguish the two."""
+        pass

@@ -40,7 +40,29 @@ def status(
         r = httpx.get(f"http://127.0.0.1:{port}/state", timeout=2.0)
         data = r.json()
         typer.echo(f"State: {data['state']}")
-        typer.echo(f"Since: {data['since']}")
+        typer.echo(f"Sessions: {data['active_sessions']}")
+        if data.get("breakdown"):
+            typer.echo(f"Breakdown: {data['breakdown']}")
+    except httpx.ConnectError:
+        typer.echo("Daemon is not running.", err=True)
+        raise typer.Exit(1)
+
+
+@app.command()
+def sessions(
+    port: int = typer.Option(8765, help="Daemon port"),
+):
+    """List all active sessions."""
+    import httpx
+
+    try:
+        r = httpx.get(f"http://127.0.0.1:{port}/sessions", timeout=2.0)
+        data = r.json()
+        if not data["sessions"]:
+            typer.echo("No active sessions.")
+        else:
+            for sid, state in data["sessions"].items():
+                typer.echo(f"  {sid}: {state}")
     except httpx.ConnectError:
         typer.echo("Daemon is not running.", err=True)
         raise typer.Exit(1)
@@ -49,6 +71,7 @@ def status(
 @app.command()
 def test(
     state: str = typer.Argument(help="State to trigger (e.g. awaiting_input, error)"),
+    session_id: str = typer.Option("test-session", "--session", "-s", help="Session ID"),
     port: int = typer.Option(8765, help="Daemon port"),
 ):
     """Send a synthetic event to test a state transition."""
@@ -73,7 +96,7 @@ def test(
     try:
         r = httpx.post(
             f"http://127.0.0.1:{port}/events",
-            json={"event": event},
+            json={"event": event, "session_id": session_id},
             timeout=2.0,
         )
         typer.echo(r.json())

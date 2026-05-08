@@ -34,9 +34,21 @@ class RecallState(IntEnum):
 
 
 class StateFrame(BaseModel):
-    """The standard frame broadcast to all transports and consumers."""
+    """Per-session state frame."""
 
+    type: str = "session"
+    session_id: str
     state: RecallState
     previous: RecallState
     triggered_by: HookEvent | None = None
+    timestamp: datetime
+
+
+class AggregateFrame(BaseModel):
+    """Aggregated state across all active sessions."""
+
+    type: str = "aggregate"
+    state: RecallState
+    active_sessions: int
+    breakdown: dict[str, int]
     timestamp: datetime
