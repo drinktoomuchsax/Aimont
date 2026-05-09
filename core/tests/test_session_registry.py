@@ -109,4 +109,46 @@ async def test_list_sessions(registry):
 
     sessions = await registry.list_sessions()
     assert sessions["s1"]["state"] == "working"
+    assert sessions["s1"]["agent_kind"] == "claude"
     assert sessions["s2"]["state"] == "idle"
+    assert sessions["s2"]["agent_kind"] == "claude"
+
+
+@pytest.mark.asyncio
+async def test_agent_kind_stored_and_emitted(registry):
+    frame, _ = await registry.handle_transition(
+        "s1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT, agent_kind="codex"
+    )
+    assert frame is not None
+    assert frame.agent_kind == "codex"
+
+    info = await registry.get_session_info("s1")
+    assert info is not None
+    assert info["state"] == "working"
+    assert info["agent_kind"] == "codex"
+
+
+@pytest.mark.asyncio
+async def test_mixed_agent_sessions(registry):
+    await registry.handle_transition(
+        "c1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT, agent_kind="claude"
+    )
+    await registry.handle_transition(
+        "c2", RecallState.IDLE, HookEvent.SESSION_START, agent_kind="codex"
+    )
+
+    sessions = await registry.list_sessions()
+    assert sessions["c1"]["agent_kind"] == "claude"
+    assert sessions["c2"]["agent_kind"] == "codex"
+
+
+@pytest.mark.asyncio
+async def test_agent_kind_session_end_preserved(registry):
+    await registry.handle_transition(
+        "c2", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT, agent_kind="codex"
+    )
+    frame, _ = await registry.handle_transition(
+        "c2", RecallState.OFF, HookEvent.SESSION_END
+    )
+    assert frame is not None
+    assert frame.agent_kind == "codex"

@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""Hook shim: reads Claude Code hook JSON from stdin, POSTs to daemon.
+"""Hook shim: reads a Claude Code / Codex CLI hook JSON from stdin, POSTs to daemon.
 
-Claude Code passes JSON to hooks via stdin with fields including:
-  session_id, hook_event_name, cwd, transcript_path, etc.
+Both Claude Code and Codex CLI pass JSON to hooks via stdin with the same field
+names: session_id, hook_event_name, cwd, transcript_path, etc. That means a
+single shim can serve both agents; we just tag each POST with an agent kind so
+the daemon and receivers can tell them apart.
 
-This script extracts the event and session_id, and forwards to the daemon.
-It auto-starts the daemon if not running.
+Pass `--agent codex` (or any other identifier) when wiring this script into
+Codex's hooks.json. Defaults to "claude" so existing installs keep working
+without touching their Claude Code settings.
 
 Requirements:
 - Complete in <500ms
-- Never fail in a way that blocks Claude Code (always exit 0)
+- Never fail in a way that blocks the host agent (always exit 0)
 - Dependency-free (uses only stdlib)
 """
 
+import argparse
 import json
 import os
 import subprocess
@@ -111,7 +115,20 @@ def _start_daemon():
         f.write(str(proc.pid))
 
 
+def _parse_agent(argv: list[str]) -> str:
+    # We parse argv manually-ish to keep startup cheap and never raise on
+    # unexpected flags — a hook must never block the host agent.
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--agent", default="claude")
+    try:
+        args, _ = parser.parse_known_args(argv)
+        return args.agent or "claude"
+    except SystemExit:
+        return "claude"
+
+
 def main():
+    agent_kind = _parse_agent(sys.argv[1:])
     try:
         raw = sys.stdin.read()
         if not raw.strip():
@@ -119,7 +136,7 @@ def main():
 
         payload = json.loads(raw)
 
-        # Claude Code provides hook_event_name and session_id in stdin JSON
+        # Both Claude Code and Codex CLI use the same field names.
         event_name = payload.get("hook_event_name") or payload.get("event") or ""
         session_id = payload.get("session_id") or "default"
 
@@ -136,6 +153,7 @@ def main():
         body = json.dumps({
             "event": event_name,
             "session_id": session_id,
+            "agent_kind": agent_kind,
             "metadata": metadata,
             "raw": payload,
         }).encode()

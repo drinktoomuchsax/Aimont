@@ -89,3 +89,38 @@ async def test_debounced_event(client):
     r = await client.post("/events", json={"event": "PreToolUse", "session_id": "s1"})
     data = r.json()
     assert data["status"] == "debounced"
+
+
+@pytest.mark.asyncio
+async def test_agent_kind_defaults_to_claude(client):
+    await client.post("/events", json={"event": "UserPromptSubmit", "session_id": "sc1"})
+    r = await client.get("/sessions/sc1")
+    assert r.json()["agent_kind"] == "claude"
+
+
+@pytest.mark.asyncio
+async def test_agent_kind_codex_propagates(client):
+    await client.post(
+        "/events",
+        json={"event": "UserPromptSubmit", "session_id": "sx1", "agent_kind": "codex"},
+    )
+    r = await client.get("/sessions/sx1")
+    data = r.json()
+    assert data["state"] == "working"
+    assert data["agent_kind"] == "codex"
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_includes_agent_kind(client):
+    await client.post(
+        "/events",
+        json={"event": "UserPromptSubmit", "session_id": "a1", "agent_kind": "claude"},
+    )
+    await client.post(
+        "/events",
+        json={"event": "UserPromptSubmit", "session_id": "b1", "agent_kind": "codex"},
+    )
+    r = await client.get("/sessions")
+    sessions = r.json()["sessions"]
+    assert sessions["a1"]["agent_kind"] == "claude"
+    assert sessions["b1"]["agent_kind"] == "codex"

@@ -12,7 +12,7 @@ from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from claude_recall.config import RecallConfig, load_config
-from claude_recall.models import AggregateFrame, HookEvent, RecallState, StateFrame
+from claude_recall.models import DEFAULT_AGENT_KIND, AggregateFrame, HookEvent, RecallState, StateFrame
 from claude_recall.rules import RuleEngine
 from claude_recall.session_registry import SessionRegistry
 from claude_recall.transports import get_transport_class
@@ -23,6 +23,7 @@ from claude_recall.transports.websocket import WebSocketTransport
 class EventPayload(BaseModel):
     event: str
     session_id: str | None = None
+    agent_kind: str | None = None
     tool_name: str | None = None
     metadata: dict[str, Any] | None = None
     raw: dict[str, Any] = {}
@@ -67,9 +68,15 @@ class App:
             return {"status": "debounced"}
 
         session_id = payload.session_id or self._default_session_id()
+        agent_kind = payload.agent_kind or DEFAULT_AGENT_KIND
 
         session_frame, aggregate_frame = await self.registry.handle_transition(
-            session_id, result.state, hook_event, force=result.force, metadata=payload.metadata
+            session_id,
+            result.state,
+            hook_event,
+            force=result.force,
+            metadata=payload.metadata,
+            agent_kind=agent_kind,
         )
 
         if session_frame:
