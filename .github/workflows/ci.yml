@@ -1,0 +1,44 @@
+name: CI
+
+# Gate PRs against main and commits landing on main. Kept as "CI"
+# (not "tests") so future lint / build / deploy jobs can live here
+# alongside pytest without spawning a parallel workflow file.
+#
+# PRs are blocked from merge until this run is green once branch
+# protection is enabled (configured in GitHub settings, not here).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel older runs on the same ref when a new commit arrives — saves
+# CI minutes when someone force-pushes or pushes several commits in a row.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          # Pin the uv version so CI is reproducible; bump deliberately.
+          version: "0.5.x"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run pytest
+        run: uv run pytest -v
