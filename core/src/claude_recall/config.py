@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import socket
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +14,33 @@ from pydantic import BaseModel
 class ServerConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = 8765
+
+
+class HostConfig(BaseModel):
+    """Identifies this daemon among peers.
+
+    `id` defaults to socket.gethostname() when unset. It can also be
+    overridden by the CLAUDE_RECALL_HOST_ID environment variable.
+    `display_name` is a human-readable label shown on dashboards; it
+    has no role in routing or dedup.
+    """
+
+    id: str | None = None
+    display_name: str | None = None
+
+    def resolve_id(self) -> str:
+        env = os.environ.get("CLAUDE_RECALL_HOST_ID")
+        if env:
+            return env
+        if self.id:
+            return self.id
+        return socket.gethostname() or "unknown-host"
+
+    def resolve_display_name(self) -> str | None:
+        env = os.environ.get("CLAUDE_RECALL_HOST_DISPLAY_NAME")
+        if env:
+            return env
+        return self.display_name
 
 
 class StateTTL(BaseModel):
@@ -44,6 +73,7 @@ class RuleConfig(BaseModel):
 
 class RecallConfig(BaseModel):
     server: ServerConfig = ServerConfig()
+    host: HostConfig = HostConfig()
     states: StatesConfig = StatesConfig()
     transports: dict[str, TransportConfig] = {}
     rules: list[RuleConfig] = []

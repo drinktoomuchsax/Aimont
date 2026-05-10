@@ -8,11 +8,17 @@ Consumers (lights, apps, widgets) connect via WebSocket or receive frames throug
 
 ## Versioning
 
-Every frame carries a `schema_version` integer. The current version is **1**.
+Every frame carries a `schema_version` integer. The current version is **2**.
 
 - **Non-breaking additions** (new optional fields) do NOT bump the version.
 - **Breaking changes** (renaming, removing, or changing field types) bump `schema_version` by 1.
 - Receivers **should** check `schema_version` on first frame and reject or degrade gracefully on unknown versions.
+
+### What's new in v2
+
+- Every frame now carries a `host` identity, `message_id`, and `forwarded_by` list — enabling multi-daemon cascading topologies (see [Multi-Host Protocol](#multi-host-protocol) below).
+- New `PresenceFrame` announces host online/offline transitions.
+- v1 receivers are forward-compatible: unknown fields are silently ignored.
 
 ## Frame Types
 
@@ -22,8 +28,14 @@ Emitted when a single session's state changes:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "type": "session",
+  "message_id": "3f8c2e11-4b5a-4c9d-8e7f-123456789abc",
+  "host": {
+    "host_id": "zhang-mbp",
+    "display_name": "Zhang's Macbook"
+  },
+  "forwarded_by": [],
   "session_id": "abc123",
   "state": 60,
   "previous": 30,
@@ -59,6 +71,9 @@ Emitted when a single session's state changes:
 |-------|------|-------------|
 | `schema_version` | integer | Frame schema version. Bumped on breaking changes. Receivers should reject unknown majors. |
 | `type` | string | Always `"session"` |
+| `message_id` | string | UUID, unique per frame. Used for loop-prevention dedup in cascaded topologies. |
+| `host` | object \| null | Origin host identity (see [Host Identity](#host-identity)). `null` only for v1 frames. |
+| `forwarded_by` | array of string | host_ids of daemons that have relayed this frame. Used for split-horizon loop prevention. |
 | `session_id` | string | Unique identifier for the Claude Code session |
 | `state` | integer | New state value (see States below) |
 | `previous` | integer | State before this transition |
@@ -106,8 +121,14 @@ Emitted when the overall aggregated state changes (computed as the max priority 
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "type": "aggregate",
+  "message_id": "a1b2c3d4-...",
+  "host": {
+    "host_id": "zhang-mbp",
+    "display_name": "Zhang's Macbook"
+  },
+  "forwarded_by": [],
   "state": 80,
   "active_sessions": 3,
   "breakdown": {
@@ -123,10 +144,105 @@ Emitted when the overall aggregated state changes (computed as the max priority 
 |-------|------|-------------|
 | `schema_version` | integer | Frame schema version. Bumped on breaking changes. Receivers should reject unknown majors. |
 | `type` | string | Always `"aggregate"` |
+| `message_id` | string | UUID, unique per frame. Used for dedup in cascaded topologies. |
+| `host` | object \| null | Origin host identity. `null` only for v1 frames. |
+| `forwarded_by` | array of string | host_ids of daemons that have relayed this frame. |
 | `state` | integer | Highest-priority state across all sessions |
 | `active_sessions` | integer | Number of currently active sessions |
 | `breakdown` | object | Count of sessions in each state (state name → count) |
 | `timestamp` | ISO 8601 | When the aggregate was computed |
+
+### Presence Frame
+
+Emitted when a daemon comes online or goes offline. In a single-daemon deployment, the daemon emits `online` at startup and (best-effort) `offline` on shutdown. In cascaded topologies, the upstream daemon emits `offline` when a downstream's WebSocket connection drops.
+
+```json
+{
+  "schema_version": 2,
+  "type": "presence",
+  "message_id": "b7f8a2c5-...",
+  "host": {
+    "host_id": "zhang-mbp",
+    "display_name": "Zhang's Macbook"
+  },
+  "status": "online",
+  "last_active_ago_ms": null,
+  "forwarded_by": [],
+  "timestamp": "2026-05-08T12:00:00Z"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `schema_version` | integer | Frame schema version. |
+| `type` | string | Always `"presence"` |
+| `message_id` | string | UUID, unique per frame. |
+| `host` | object | Which host this presence event is about. Required. |
+| `status` | string | `"online"` or `"offline"` |
+| `last_active_ago_ms` | integer \| null | For offline frames, ms since last activity. `null` for online frames. |
+| `forwarded_by` | array of string | Relay chain. |
+| `timestamp` | ISO 8601 | When the event occurred. |
+
+## Host Identity
+
+Every frame produced by a v2 daemon carries a `host` object identifying its origin:
+
+```json
+{
+  "host_id": "zhang-mbp",
+  "display_name": "Zhang's Macbook"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `host_id` | string | Stable, unique identifier. Defaults to `socket.gethostname()`. Used for routing, dedup, and loop prevention. |
+| `display_name` | string \| null | Human-readable label. Purely cosmetic — never used for routing. |
+
+**Resolution order for `host_id`:**
+1. `CLAUDE_RECALL_HOST_ID` environment variable
+2. `host.id` in `config.yaml`
+3. `socket.gethostname()`
+4. `"unknown-host"` fallback
+
+**Resolution order for `display_name`:**
+1. `CLAUDE_RECALL_HOST_DISPLAY_NAME` environment variable
+2. `host.display_name` in `config.yaml`
+3. `null`
+
+## Multi-Host Protocol
+
+Starting in schema v2, the protocol supports cascading multiple daemons into a single topology. This enables use cases like "company-wide dashboard aggregating N engineers' Claude Code status" without introducing a separate aggregator component — each daemon can simultaneously act as server, client, and relay.
+
+**See [Multi-Host Roadmap](multi-host-roadmap.md) for the full deployment guide and design rationale.**
+
+### Protocol additions
+
+**On every frame:**
+- `host`: who produced this frame (the origin, not the relay).
+- `message_id`: UUID for dedup across cascade paths.
+- `forwarded_by`: list of host_ids that have relayed this frame. Used for split-horizon loop prevention.
+
+**New frame type:**
+- `PresenceFrame`: announces online/offline transitions.
+
+### Loop prevention (coming in PR 3)
+
+Cascaded topologies use two mechanisms together:
+1. **Split horizon via `forwarded_by`**: a daemon appends its own host_id before relaying. Any frame where `self.host_id ∈ forwarded_by` is dropped.
+2. **Message ID dedup**: a short-TTL LRU cache of seen `message_id`s rejects repeats.
+
+### Current status (schema v2, PR 1)
+
+What works now:
+- ✓ Frames carry host identity and cascading metadata.
+- ✓ `PresenceFrame` is defined.
+- ✓ v1 receivers stay forward-compatible.
+
+What's coming:
+- PR 2: `PushTransport` — daemon as a WebSocket client.
+- PR 3: `/ingest` endpoint + loop prevention.
+- PR 4: Token-based configuration.
 
 ## States
 
@@ -298,7 +414,7 @@ Response:
 For push-type transports (serial, MQTT), frames are sent as compact JSON lines terminated by `\n`:
 
 ```
-{"schema_version":1,"type":"aggregate","state":60,"active_sessions":1,"breakdown":{"awaiting_input":1},"timestamp":"2026-05-08T12:00:00Z"}\n
+{"schema_version":2,"type":"aggregate","message_id":"abc-123","host":{"host_id":"zhang-mbp"},"forwarded_by":[],"state":60,"active_sessions":1,"breakdown":{"awaiting_input":1},"timestamp":"2026-05-08T12:00:00Z"}\n
 ```
 
 Serial transports use 115200 baud, 8N1 by default.

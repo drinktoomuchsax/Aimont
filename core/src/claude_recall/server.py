@@ -12,7 +12,14 @@ from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from claude_recall.config import RecallConfig, load_config
-from claude_recall.models import DEFAULT_AGENT_KIND, AggregateFrame, HookEvent, RecallState, StateFrame
+from claude_recall.models import (
+    DEFAULT_AGENT_KIND,
+    AggregateFrame,
+    HookEvent,
+    HostIdentity,
+    RecallState,
+    StateFrame,
+)
 from claude_recall.rules import RuleEngine
 from claude_recall.session_registry import SessionRegistry
 from claude_recall.transports import get_transport_class
@@ -32,7 +39,11 @@ class EventPayload(BaseModel):
 class App:
     def __init__(self, config: RecallConfig):
         self.config = config
-        self.registry = SessionRegistry(config.states)
+        self.host_identity = HostIdentity(
+            host_id=config.host.resolve_id(),
+            display_name=config.host.resolve_display_name(),
+        )
+        self.registry = SessionRegistry(config.states, host_identity=self.host_identity)
         self.rules = RuleEngine(config.rules)
         self.transports: list[BaseTransport] = []
         self._ws_transport: WebSocketTransport | None = None

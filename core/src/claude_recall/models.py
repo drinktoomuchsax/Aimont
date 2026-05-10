@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from enum import IntEnum, StrEnum
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class HookEvent(StrEnum):
@@ -64,7 +66,24 @@ class StateDurations(BaseModel):
 DEFAULT_AGENT_KIND = "claude"
 
 # Bump on breaking frame shape changes. Receivers should reject unknown majors.
-FRAME_SCHEMA_VERSION = 1
+# v2 adds HostIdentity, forwarded_by, message_id, and PresenceFrame.
+FRAME_SCHEMA_VERSION = 2
+
+
+class HostIdentity(BaseModel):
+    """Identifies the physical/virtual machine that produced a frame.
+
+    host_id is the stable identifier (unique within a deployment).
+    display_name is a human-readable label that can be changed without
+    breaking downstream references.
+    """
+
+    host_id: str
+    display_name: str | None = None
+
+
+def _new_message_id() -> str:
+    return str(uuid.uuid4())
 
 
 class StateFrame(BaseModel):
@@ -72,6 +91,9 @@ class StateFrame(BaseModel):
 
     schema_version: int = FRAME_SCHEMA_VERSION
     type: str = "session"
+    message_id: str = Field(default_factory=_new_message_id)
+    host: HostIdentity | None = None
+    forwarded_by: list[str] = Field(default_factory=list)
     session_id: str
     agent_kind: str = DEFAULT_AGENT_KIND
     state: RecallState
@@ -88,7 +110,27 @@ class AggregateFrame(BaseModel):
 
     schema_version: int = FRAME_SCHEMA_VERSION
     type: str = "aggregate"
+    message_id: str = Field(default_factory=_new_message_id)
+    host: HostIdentity | None = None
+    forwarded_by: list[str] = Field(default_factory=list)
     state: RecallState
     active_sessions: int
     breakdown: dict[str, int]
+    timestamp: datetime
+
+
+class PresenceFrame(BaseModel):
+    """Announces host online/offline status.
+
+    Emitted by a daemon when it starts (online) and by an upstream
+    dashboard when a downstream daemon disconnects (offline).
+    """
+
+    schema_version: int = FRAME_SCHEMA_VERSION
+    type: Literal["presence"] = "presence"
+    message_id: str = Field(default_factory=_new_message_id)
+    host: HostIdentity
+    status: Literal["online", "offline"]
+    last_active_ago_ms: int | None = None
+    forwarded_by: list[str] = Field(default_factory=list)
     timestamp: datetime
