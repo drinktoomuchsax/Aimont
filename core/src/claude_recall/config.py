@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import socket
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +35,13 @@ class HostConfig(BaseModel):
             return env
         if self.id:
             return self.id
-        return socket.gethostname() or "unknown-host"
+        hostname = socket.gethostname()
+        if hostname:
+            return hostname
+        # No hostname available: generate a unique fallback so two such
+        # machines don't silently collide into a single "unknown-host"
+        # identity on a shared dashboard.
+        return f"unknown-host-{uuid.uuid4().hex[:8]}"
 
     def resolve_display_name(self) -> str | None:
         env = os.environ.get("CLAUDE_RECALL_HOST_DISPLAY_NAME")
