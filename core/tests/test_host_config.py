@@ -43,4 +43,9 @@ def test_resolve_id_fallback_when_hostname_empty(monkeypatch):
     monkeypatch.delenv("CLAUDE_RECALL_HOST_ID", raising=False)
     monkeypatch.setattr(socket, "gethostname", lambda: "")
     cfg = HostConfig()
-    assert cfg.resolve_id() == "unknown-host"
+    # Fallback must be unique per machine, not a fixed literal, to avoid
+    # collisions when multiple hostname-less daemons share a dashboard.
+    first = cfg.resolve_id()
+    second = cfg.resolve_id()
+    assert first.startswith("unknown-host-")
+    assert first != second  # each call produces a unique fallback

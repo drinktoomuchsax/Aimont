@@ -90,8 +90,10 @@ class StateFrame(BaseModel):
     """Per-session state frame."""
 
     schema_version: int = FRAME_SCHEMA_VERSION
-    type: str = "session"
+    type: Literal["session"] = "session"
     message_id: str = Field(default_factory=_new_message_id)
+    # host is Optional only to allow parsing v1 frames (which lack this field).
+    # v2 daemons MUST stamp host on every frame they emit.
     host: HostIdentity | None = None
     forwarded_by: list[str] = Field(default_factory=list)
     session_id: str
@@ -109,8 +111,10 @@ class AggregateFrame(BaseModel):
     """Aggregated state across all active sessions."""
 
     schema_version: int = FRAME_SCHEMA_VERSION
-    type: str = "aggregate"
+    type: Literal["aggregate"] = "aggregate"
     message_id: str = Field(default_factory=_new_message_id)
+    # host is Optional only to allow parsing v1 frames (which lack this field).
+    # v2 daemons MUST stamp host on every frame they emit.
     host: HostIdentity | None = None
     forwarded_by: list[str] = Field(default_factory=list)
     state: RecallState
@@ -130,7 +134,7 @@ class PresenceFrame(BaseModel):
     type: Literal["presence"] = "presence"
     message_id: str = Field(default_factory=_new_message_id)
     host: HostIdentity
+    forwarded_by: list[str] = Field(default_factory=list)
     status: Literal["online", "offline"]
     last_active_ago_ms: int | None = None
-    forwarded_by: list[str] = Field(default_factory=list)
     timestamp: datetime
