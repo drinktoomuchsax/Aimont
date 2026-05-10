@@ -52,7 +52,7 @@
 
 ---
 
-## PR 1：协议骨架（schema v2）
+## PR 1：协议骨架（schema v2） ✅ 已完成
 
 ### 目标
 
@@ -128,7 +128,7 @@
 
 ---
 
-## PR 2：PushTransport（主动上报能力）
+## PR 2：PushTransport（主动上报能力） ✅ 已完成
 
 ### 目标
 

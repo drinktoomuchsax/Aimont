@@ -237,17 +237,67 @@ Cascaded topologies use two mechanisms together:
 1. **Split horizon via `forwarded_by`**: a daemon appends its own host_id before relaying. Any frame where `self.host_id ∈ forwarded_by` is dropped.
 2. **Message ID dedup**: a short-TTL LRU cache of seen `message_id`s rejects repeats.
 
-### Current status (schema v2, PR 1)
+### Current status
 
 What works now:
-- ✓ Frames carry host identity and cascading metadata.
-- ✓ `PresenceFrame` is defined.
-- ✓ v1 receivers stay forward-compatible.
+- ✓ Frames carry host identity and cascading metadata (PR 1).
+- ✓ `PresenceFrame` is defined (PR 1).
+- ✓ v1 receivers stay forward-compatible (PR 1).
+- ✓ `PushTransport` — daemon can act as a WebSocket client and relay frames to an upstream (PR 2).
 
 What's coming:
-- PR 2: `PushTransport` — daemon as a WebSocket client.
 - PR 3: `/ingest` endpoint + loop prevention.
 - PR 4: Token-based configuration.
+
+## Push Mode (Schema v2, PR 2)
+
+A daemon can be configured to forward its emitted frames to an upstream daemon's `/ingest` endpoint. This enables reverse-direction communication: the downstream daemon initiates an outbound WebSocket connection, eliminating the need for public inbound reachability (NAT-friendly).
+
+### How it connects
+
+```
+downstream daemon ──wss──▶ upstream daemon (/ingest, PR 3)
+                  │
+                  └─ outbound connection
+                     Authorization: Bearer <token>
+```
+
+On startup, `PushTransport`:
+1. Opens a WebSocket connection to the configured `upstream_url`.
+2. Sends a `hello` message announcing this daemon's `HostIdentity`:
+   ```json
+   {"type": "hello", "host": {"host_id": "zhang-mbp", "display_name": "Zhang's Mac"}}
+   ```
+3. For every frame emitted locally (state, aggregate), forwards it as-is.
+4. On disconnect, reconnects with exponential backoff (1s → 60s cap).
+
+### Enabling push mode
+
+**Environment variables (simplest):**
+```bash
+export CLAUDE_RECALL_UPSTREAM_URL=wss://recall.company.com/ingest
+export CLAUDE_RECALL_TOKEN=xxx   # optional, sent as Bearer token
+# Restart daemon.
+```
+
+**YAML config:**
+```yaml
+transports:
+  push:
+    type: push
+    enabled: true
+    options:
+      upstream_url: "wss://recall.company.com/ingest"
+      auth_token: "xxx"
+```
+
+Environment variables take precedence over YAML values.
+
+### Behavioral notes
+
+- **Inert when unconfigured**: no `upstream_url` → transport does nothing, no errors, no resource use.
+- **Fail-silent on send**: if the connection is temporarily down, `send()` drops the frame rather than raising. The reconnect loop recovers on its own. The tradeoff: during long outages, some frames are lost — but the current aggregate state is always re-sent when the cascade PR (PR 3) fills in snapshotting on reconnect.
+- **No bidirectional forwarding yet**: `PushTransport` only produces outbound frames. Receiving frames from an upstream (for true mesh topologies) lands in PR 3's `/ingest` endpoint.
 
 ## States
 
