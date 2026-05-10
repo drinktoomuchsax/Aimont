@@ -125,11 +125,47 @@ def load_config(path: Path | None = None) -> RecallConfig:
                     merged = _deep_merge(merged, data)
 
     if "rules" not in merged:
-        merged["rules"] = DEFAULT_RULES
+        # Copy to avoid mutating the module-level default when env overrides apply.
+        merged["rules"] = [dict(r) for r in DEFAULT_RULES]
     if "transports" not in merged:
-        merged["transports"] = DEFAULT_TRANSPORTS
+        merged["transports"] = {
+            name: dict(opts) for name, opts in DEFAULT_TRANSPORTS.items()
+        }
+
+    _apply_push_env_overrides(merged)
 
     return RecallConfig.model_validate(merged)
+
+
+def _apply_push_env_overrides(merged: dict[str, Any]) -> None:
+    """Allow enabling PushTransport purely via environment variables.
+
+    If CLAUDE_RECALL_UPSTREAM_URL is set and no explicit `push` transport
+    is configured, inject one. This lets users opt into cascading without
+    touching config files.
+    """
+    upstream = os.environ.get("CLAUDE_RECALL_UPSTREAM_URL")
+    if not upstream:
+        return
+
+    transports = merged.setdefault("transports", {})
+    existing = transports.get("push")
+    if existing is None:
+        transports["push"] = {
+            "type": "push",
+            "enabled": True,
+            "options": {
+                "upstream_url": upstream,
+            },
+        }
+        existing = transports["push"]
+
+    options = existing.setdefault("options", {})
+    # Env always takes precedence over config file values.
+    options["upstream_url"] = upstream
+    token = os.environ.get("CLAUDE_RECALL_TOKEN")
+    if token:
+        options["auth_token"] = token
 
 
 def _deep_merge(base: dict, override: dict) -> dict:

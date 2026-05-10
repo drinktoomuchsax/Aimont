@@ -38,3 +38,4 @@ def _load_builtins():
     _loaded = True
     import claude_recall.transports.websocket  # noqa: F401
     import claude_recall.transports.terminal  # noqa: F401
+    import claude_recall.transports.push  # noqa: F401

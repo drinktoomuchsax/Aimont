@@ -54,7 +54,11 @@ class App:
             if not tc.enabled:
                 continue
             cls = get_transport_class(tc.type)
-            transport = cls(name=name, options=tc.options)
+            options = dict(tc.options)
+            # Transports that need this daemon's identity (e.g. push) get it
+            # injected here so they don't have to re-resolve the config.
+            options.setdefault("host_identity", self.host_identity)
+            transport = cls(name=name, options=options)
             await transport.start()
             self.transports.append(transport)
             if isinstance(transport, WebSocketTransport):
