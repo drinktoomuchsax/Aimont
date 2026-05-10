@@ -111,6 +111,15 @@ cp hooks/emit.py ~/.claude-recall/hooks/emit.py
 
 ---
 
+## 多机聚合（团队/公司看板）
+
+想把整个团队或公司的 Claude Code 状态聚合到一个看板？Claude-Recall 天生支持级联拓扑——每个 daemon 既能服务本地 viewer，也能把状态 push 到上游。员工只需一条 `claude-recall join <token>` 即可加入。
+
+- **部署指南**：[docs/multi-host.md](docs/multi-host.md) — 架构图、Cloudflare Tunnel 步骤、三种规模方案（个人/团队/公司）、SSO 集成、故障排查。
+- **协议细节**：[docs/protocol.md](docs/protocol.md) — 帧格式、`/ingest` 端点、防环机制、token 规范。
+
+---
+
 ## 状态
 
 | 状态 | 值 | 颜色 | 含义 |
@@ -150,7 +159,8 @@ receivers/
   └── web-dashboard/ 浏览器看板 (React + TypeScript)
   └── (more)         USB 灯、Flutter App、WLED...
 docs/
-  └── protocol.md    状态帧协议（给指示器开发者看）
+  ├── protocol.md    状态帧协议（给指示器开发者看）
+  └── multi-host.md  团队/公司部署指南（级联、token、Cloudflare Tunnel）
 ```
 
 ## CLI 命令
