@@ -73,3 +73,38 @@ async def test_size_reports_live_count():
     assert await cache.size() == 2
     await cache.add("a")  # duplicate
     assert await cache.size() == 2
+
+
+async def test_duplicate_hit_refreshes_timestamp_not_just_lru_position():
+    """Regression for CodeRabbit PR #5 finding #2.
+
+    The bug: if a duplicate hit only moves the entry to the LRU tail
+    without refreshing its timestamp, the eviction sweep short-circuits
+    on the head and leaves expired entries hiding behind younger ones.
+
+    Setup:
+        t=0.00   add A
+        t=0.03   add B                   → B's timestamp = 0.03
+        t=0.03   add A (duplicate)       → under fix, A's timestamp = 0.03
+                                         → under bug, A's timestamp stays 0.00
+        t=0.12   contains(A)?
+                 TTL=0.05 → cutoff=0.07.
+                 Under the fix: A's refreshed timestamp 0.03 < 0.07 → also expired,
+                   so we can't use this to distinguish. Different tack:
+
+    Use an age-sensitive assertion: add A, let it age past TTL, then
+    refresh it via a duplicate hit, and confirm contains(A) is still True.
+    That can only succeed if the timestamp was refreshed.
+    """
+    cache = MessageIdCache(ttl_sec=0.05)
+    await cache.add("A")
+    # Let A's original timestamp drift close to — but not past — TTL.
+    await asyncio.sleep(0.03)
+    # Duplicate hit: must refresh timestamp.
+    assert await cache.add("A") is False
+    # Sleep beyond the ORIGINAL TTL window but within the refreshed one.
+    # With ttl=0.05 and the refresh happening at t≈0.03, the refreshed
+    # entry survives until t≈0.08. We check at t≈0.07 — past the
+    # unrefreshed deadline (t=0.05), still within the refreshed one.
+    await asyncio.sleep(0.04)
+    assert await cache.contains("A") is True, "duplicate hit did not refresh TTL"

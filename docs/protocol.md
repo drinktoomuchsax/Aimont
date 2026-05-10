@@ -231,7 +231,7 @@ Starting in schema v2, the protocol supports cascading multiple daemons into a s
 **New frame type:**
 - `PresenceFrame`: announces online/offline transitions.
 
-### Loop prevention (coming in PR 3)
+### Loop prevention (implemented in PR 3)
 
 Cascaded topologies use two mechanisms together:
 1. **Split horizon via `forwarded_by`**: a daemon appends its own host_id before relaying. Any frame where `self.host_id ∈ forwarded_by` is dropped.
@@ -311,7 +311,7 @@ That's the "infinite cascade" primitive — the same protocol is symmetric betwe
 
 ### Handshake
 
-```
+```text
 downstream ──Authorization: Bearer <token>──▶ upstream GET /ingest
               ↓ (upgrade)
 downstream ──{"type":"hello","host":{"host_id":"zhang-mbp",...}}──▶ upstream

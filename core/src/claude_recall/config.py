@@ -188,18 +188,40 @@ def _apply_push_env_overrides(merged: dict[str, Any]) -> None:
         options["auth_token"] = token
 
 
-def _apply_ingest_env_overrides(merged: dict[str, Any]) -> None:
-    """Allow enabling /ingest purely via environment variables.
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+_FALSY = frozenset({"0", "false", "no", "off"})
 
-    - CLAUDE_RECALL_INGEST_ENABLED=1 turns ingest on.
-    - CLAUDE_RECALL_INGEST_TOKENS is a comma-separated list of allowed
-      Bearer tokens. If unset (and ingest is enabled), any token is
-      accepted — only safe for localhost/dev.
+
+def _apply_ingest_env_overrides(merged: dict[str, Any]) -> None:
+    """Allow toggling /ingest purely via environment variables.
+
+    - CLAUDE_RECALL_INGEST_ENABLED accepts boolean-ish strings
+      (1/true/yes/on = enable, 0/false/no/off = disable). Unrecognized
+      or unset values leave the yaml config as-is. This avoids the
+      footgun where `CLAUDE_RECALL_INGEST_ENABLED=0` would have been
+      truthy by `os.environ.get()` presence alone.
+    - CLAUDE_RECALL_INGEST_TOKENS is a comma-separated Bearer allowlist.
+      Only applied when ingest is explicitly enabled in this call.
     """
-    if not os.environ.get("CLAUDE_RECALL_INGEST_ENABLED"):
+    raw = os.environ.get("CLAUDE_RECALL_INGEST_ENABLED")
+    if raw is None:
         return
+    normalized = raw.strip().lower()
+    if normalized in _TRUTHY:
+        enabled = True
+    elif normalized in _FALSY:
+        enabled = False
+    else:
+        # Don't silently misinterpret garbage values.
+        return
+
     ingest = merged.setdefault("ingest", {})
-    ingest["enabled"] = True
+    ingest["enabled"] = enabled
+
+    if not enabled:
+        # Don't apply token allowlist to a disabled endpoint.
+        return
+
     tokens_env = os.environ.get("CLAUDE_RECALL_INGEST_TOKENS")
     if tokens_env:
         ingest["allowed_tokens"] = [t.strip() for t in tokens_env.split(",") if t.strip()]

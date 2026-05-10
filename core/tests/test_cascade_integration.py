@@ -83,6 +83,10 @@ async def _spawn_daemon(
             if server.started:
                 break
             await asyncio.sleep(0.02)
+        if not server.started:
+            raise TimeoutError(
+                f"uvicorn test server did not start on port {port} within 2s"
+            )
         yield app_obj, port
     finally:
         server.should_exit = True
