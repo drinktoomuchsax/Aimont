@@ -158,3 +158,56 @@ async def test_registry_frames_have_unique_message_ids(default_config):
     assert f1 is not None
     assert f2 is not None
     assert f1.message_id != f2.message_id
+
+
+# ---- v1 compatibility regression tests ---------------------------------
+#
+# These guard the PR 1 promise that v1 frames still parse under v2 models.
+# If a future commit makes `host`, `forwarded_by`, or `message_id` required
+# without bumping the schema version, these tests will fail loudly.
+
+
+def test_v1_state_frame_payload_parses():
+    v1_payload = {
+        "schema_version": 1,
+        "type": "session",
+        "session_id": "abc123",
+        "state": 30,
+        "previous": 10,
+        "timestamp": "2026-01-01T00:00:00+00:00",
+    }
+    frame = StateFrame.model_validate(v1_payload)
+    assert frame.session_id == "abc123"
+    assert frame.host is None              # v1 had no host
+    assert frame.forwarded_by == []        # defaults
+    assert isinstance(frame.message_id, str) and frame.message_id  # auto-generated
+
+
+def test_v1_aggregate_frame_payload_parses():
+    v1_payload = {
+        "schema_version": 1,
+        "type": "aggregate",
+        "state": 10,
+        "active_sessions": 0,
+        "breakdown": {},
+        "timestamp": "2026-01-01T00:00:00+00:00",
+    }
+    frame = AggregateFrame.model_validate(v1_payload)
+    assert frame.host is None
+    assert frame.forwarded_by == []
+    assert isinstance(frame.message_id, str) and frame.message_id
+
+
+def test_v1_payload_with_extra_unknown_field_parses():
+    """Forward compatibility: v2 daemons may add fields we don't know yet."""
+    payload = {
+        "schema_version": 1,
+        "type": "session",
+        "session_id": "abc",
+        "state": 10,
+        "previous": 0,
+        "timestamp": "2026-01-01T00:00:00+00:00",
+        "some_future_field": {"arbitrary": "nested"},
+    }
+    frame = StateFrame.model_validate(payload)  # must not raise
+    assert frame.session_id == "abc"

@@ -154,7 +154,9 @@ Emitted when the overall aggregated state changes (computed as the max priority 
 
 ### Presence Frame
 
-Emitted when a daemon comes online or goes offline. In a single-daemon deployment, the daemon emits `online` at startup and (best-effort) `offline` on shutdown. In cascaded topologies, the upstream daemon emits `offline` when a downstream's WebSocket connection drops.
+> **Status:** The `PresenceFrame` schema is defined as of schema v2 (PR 1), but no daemon emits it yet. Sending on startup/shutdown and on `/ingest` connection drops will land in a later PR. Receivers can start validating their parse path now, but should not assume `online`/`offline` frames will actually arrive in the current release.
+
+Will be emitted when a daemon comes online or goes offline. In a single-daemon deployment, the daemon will emit `online` at startup and (best-effort) `offline` on shutdown. In cascaded topologies, the upstream daemon will emit `offline` when a downstream's WebSocket connection drops.
 
 ```json
 {
@@ -202,8 +204,11 @@ Every frame produced by a v2 daemon carries a `host` object identifying its orig
 **Resolution order for `host_id`:**
 1. `CLAUDE_RECALL_HOST_ID` environment variable
 2. `host.id` in `config.yaml`
-3. `socket.gethostname()`
-4. `"unknown-host"` fallback
+3. `socket.gethostname()` (cached on first resolution)
+4. `unknown-host-<8-hex-suffix>` fallback — a per-instance random suffix
+   prevents two hostname-less daemons from colliding into a single
+   identity. The generated value is cached on the `HostConfig` instance,
+   so `host_id` remains stable for the lifetime of the daemon.
 
 **Resolution order for `display_name`:**
 1. `CLAUDE_RECALL_HOST_DISPLAY_NAME` environment variable

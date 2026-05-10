@@ -43,9 +43,25 @@ def test_resolve_id_fallback_when_hostname_empty(monkeypatch):
     monkeypatch.delenv("CLAUDE_RECALL_HOST_ID", raising=False)
     monkeypatch.setattr(socket, "gethostname", lambda: "")
     cfg = HostConfig()
-    # Fallback must be unique per machine, not a fixed literal, to avoid
-    # collisions when multiple hostname-less daemons share a dashboard.
+    # Fallback must be unique per machine (not a fixed literal) so multiple
+    # hostname-less daemons don't collide, AND it must be cached on the
+    # instance so presence/relay paths see a stable host_id.
     first = cfg.resolve_id()
     second = cfg.resolve_id()
     assert first.startswith("unknown-host-")
-    assert first != second  # each call produces a unique fallback
+    assert first == second  # stable across calls on the same instance
+    # But two different HostConfig instances still get distinct fallbacks.
+    assert first != HostConfig().resolve_id()
+
+
+def test_resolve_id_caches_hostname(monkeypatch):
+    """Even when hostname is valid, cache it so the id stays stable if
+    gethostname() starts returning something different mid-process."""
+    monkeypatch.delenv("CLAUDE_RECALL_HOST_ID", raising=False)
+    values = iter(["host-at-startup", "renamed-later", "renamed-again"])
+    monkeypatch.setattr(socket, "gethostname", lambda: next(values))
+    cfg = HostConfig()
+    assert cfg.resolve_id() == "host-at-startup"
+    # Subsequent calls must not pick up the new hostname values.
+    assert cfg.resolve_id() == "host-at-startup"
+    assert cfg.resolve_id() == "host-at-startup"
