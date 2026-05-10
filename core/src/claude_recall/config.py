@@ -37,11 +37,17 @@ class HostConfig(BaseModel):
             return self.id
         hostname = socket.gethostname()
         if hostname:
+            # Cache the resolved hostname on the instance so subsequent
+            # callers (presence, relay, etc.) see a stable host_id even
+            # if gethostname() ever changes during the process lifetime.
+            self.id = hostname
             return hostname
         # No hostname available: generate a unique fallback so two such
         # machines don't silently collide into a single "unknown-host"
-        # identity on a shared dashboard.
-        return f"unknown-host-{uuid.uuid4().hex[:8]}"
+        # identity on a shared dashboard. Cache on the instance so the
+        # same daemon yields a stable id across multiple resolve calls.
+        self.id = f"unknown-host-{uuid.uuid4().hex[:8]}"
+        return self.id
 
     def resolve_display_name(self) -> str | None:
         env = os.environ.get("CLAUDE_RECALL_HOST_DISPLAY_NAME")
