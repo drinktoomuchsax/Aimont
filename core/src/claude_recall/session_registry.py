@@ -12,6 +12,7 @@ from claude_recall.models import (
     DEFAULT_AGENT_KIND,
     AggregateFrame,
     HookEvent,
+    HostIdentity,
     RecallState,
     SessionMetadata,
     StateFrame,
@@ -20,13 +21,19 @@ from claude_recall.state_machine import StateMachine
 
 
 class SessionRegistry:
-    def __init__(self, states_config: StatesConfig, session_timeout_sec: float = 3600.0):
+    def __init__(
+        self,
+        states_config: StatesConfig,
+        session_timeout_sec: float = 3600.0,
+        host_identity: HostIdentity | None = None,
+    ):
         self._states_config = states_config
         self._sessions: dict[str, StateMachine] = {}
         self._metadata: dict[str, SessionMetadata] = {}
         self._agent_kinds: dict[str, str] = {}
         self._last_active: dict[str, datetime] = {}
         self._timeout_sec = session_timeout_sec
+        self._host_identity = host_identity
         self._lock = asyncio.Lock()
 
     async def handle_transition(
@@ -66,6 +73,7 @@ class SessionRegistry:
             session_frame = None
             if changed:
                 session_frame = StateFrame(
+                    host=self._host_identity,
                     session_id=session_id,
                     agent_kind=self._agent_kinds.get(session_id, DEFAULT_AGENT_KIND),
                     state=target_state,
@@ -169,6 +177,7 @@ class SessionRegistry:
             previous = sm.effective_state
             sm._apply(RecallState.OFF, previous)
             session_frame = StateFrame(
+                host=self._host_identity,
                 session_id=session_id,
                 agent_kind=agent_kind,
                 state=RecallState.OFF,
@@ -195,6 +204,7 @@ class SessionRegistry:
             breakdown[name] = breakdown.get(name, 0) + 1
 
         return AggregateFrame(
+            host=self._host_identity,
             state=self._compute_aggregate_state(),
             active_sessions=len(self._sessions),
             breakdown=breakdown,
