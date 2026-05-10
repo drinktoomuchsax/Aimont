@@ -32,11 +32,18 @@ class MessageIdCache:
     async def add(self, message_id: str) -> bool:
         async with self._lock:
             self._evict_expired_locked()
+            now = time.monotonic()
             if message_id in self._entries:
-                # Already seen — refresh LRU position but treat as dup.
+                # Already seen — refresh both LRU position AND timestamp.
+                # Refreshing the timestamp is load-bearing: the expiry sweep
+                # below short-circuits once it hits the first non-expired
+                # entry, so any stale-timestamp entry that gets bumped to
+                # the tail would hide newer (younger) entries in front of
+                # it and keep expired ids cached past their TTL.
+                self._entries[message_id] = now
                 self._entries.move_to_end(message_id)
                 return False
-            self._entries[message_id] = time.monotonic()
+            self._entries[message_id] = now
             if len(self._entries) > self._max:
                 self._entries.popitem(last=False)
             return True
@@ -53,10 +60,10 @@ class MessageIdCache:
 
     def _evict_expired_locked(self) -> None:
         cutoff = time.monotonic() - self._ttl
-        # Since OrderedDict preserves insertion order and we update on hit,
-        # the oldest-by-insertion might not match oldest-by-access; but TTL
-        # is about *age since last access*, and we only bump on hit (above),
-        # so this works.
+        # Short-circuit relies on the head being the oldest-by-timestamp.
+        # We maintain that invariant by refreshing both the timestamp AND
+        # the LRU position together in add() — otherwise an expired entry
+        # at the head would mask newer entries past the break.
         while self._entries:
             oldest_id = next(iter(self._entries))
             if self._entries[oldest_id] >= cutoff:

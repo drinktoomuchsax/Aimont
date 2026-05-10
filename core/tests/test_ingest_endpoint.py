@@ -69,6 +69,12 @@ async def _running_daemon(config: RecallConfig) -> AsyncIterator[tuple[App, str]
             if server.started:
                 break
             await asyncio.sleep(0.02)
+        if not server.started:
+            # Surface startup failure immediately rather than letting
+            # downstream WebSocket connects fail with confusing errors.
+            raise TimeoutError(
+                f"uvicorn test server did not start on port {port} within 2s"
+            )
 
         yield app_obj, f"ws://127.0.0.1:{port}"
     finally:
