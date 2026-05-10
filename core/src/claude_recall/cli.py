@@ -174,6 +174,92 @@ def codex_probe(
 
 
 @app.command()
+def join(
+    token: str = typer.Argument(help="Encoded RecallToken string"),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing token without prompting"),
+):
+    """Join an upstream dashboard using a token issued by IT.
+
+    The token encodes the upstream URL and bearer secret; no separate
+    configuration is required. After this command succeeds, restart the
+    daemon to activate the push transport.
+    """
+    from claude_recall.auth import TokenDecodeError, decode_token
+    from claude_recall.config import TOKEN_FILE_PATH
+
+    try:
+        bundle = decode_token(token)
+    except TokenDecodeError as e:
+        typer.echo(f"Invalid token: {e}", err=True)
+        raise typer.Exit(1)
+
+    if TOKEN_FILE_PATH.exists() and not force:
+        typer.echo(
+            f"A token already exists at {TOKEN_FILE_PATH}. "
+            "Pass --force to overwrite, or run `claude-recall leave` first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    TOKEN_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    TOKEN_FILE_PATH.write_text(token + "\n", encoding="utf-8")
+    # 0600 — token is a credential; don't let other local users read it.
+    TOKEN_FILE_PATH.chmod(0o600)
+
+    typer.echo(f"✓ Joined {bundle.issuer or bundle.upstream_url}")
+    typer.echo(f"  upstream: {bundle.upstream_url}")
+    if bundle.display_name_hint:
+        typer.echo(f"  display_name_hint: {bundle.display_name_hint}")
+    typer.echo(f"  saved to: {TOKEN_FILE_PATH}")
+    typer.echo("Restart the daemon for the push transport to activate.")
+
+
+@app.command()
+def leave(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """Remove the joined token, disabling push mode on next daemon start."""
+    from claude_recall.config import TOKEN_FILE_PATH
+
+    if not TOKEN_FILE_PATH.exists():
+        typer.echo("No token to remove.")
+        return
+
+    if not yes:
+        confirm = typer.confirm(f"Delete {TOKEN_FILE_PATH}?", default=False)
+        if not confirm:
+            typer.echo("Aborted.")
+            raise typer.Exit(1)
+
+    TOKEN_FILE_PATH.unlink()
+    typer.echo(f"✓ Removed {TOKEN_FILE_PATH}")
+    typer.echo("Restart the daemon to stop pushing to the upstream.")
+
+
+@app.command()
+def issue(
+    upstream: str = typer.Option(..., "--upstream", help="Upstream URL, e.g. wss://recall.company.com/ingest"),
+    secret: str = typer.Option(..., "--secret", help="Bearer secret the upstream expects"),
+    display_name_hint: str | None = typer.Option(None, "--display-name", help="Optional hint shown on dashboards"),
+    issuer: str | None = typer.Option(None, "--issuer", help="Optional human-readable issuer label"),
+):
+    """Issue an encoded RecallToken (IT/admin use).
+
+    Prints the token to stdout. Distribute the resulting string to
+    employees, who can run `claude-recall join <token>` to connect.
+    """
+    from claude_recall.auth import RecallToken, encode_token
+
+    bundle = RecallToken(
+        upstream_url=upstream,
+        auth_secret=secret,
+        display_name_hint=display_name_hint,
+        issuer=issuer,
+    )
+    typer.echo(encode_token(bundle))
+
+
+@app.command()
 def test(
     state: str = typer.Argument(help="State to trigger (e.g. awaiting_input, error)"),
     session_id: str = typer.Option("test-session", "--session", "-s", help="Session ID"),

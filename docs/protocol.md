@@ -299,6 +299,73 @@ Environment variables take precedence over YAML values.
 - **Fail-silent on send**: if the connection is temporarily down, `send()` drops the frame rather than raising. The reconnect loop recovers on its own. The tradeoff: during long outages, some frames are lost — but the current aggregate state is always re-sent when the cascade PR (PR 3) fills in snapshotting on reconnect.
 - **No bidirectional forwarding yet**: `PushTransport` only produces outbound frames. Receiving frames from an upstream (for true mesh topologies) lands in PR 3's `/ingest` endpoint.
 
+## Token-based Join (Schema v2, PR 4)
+
+For organization deployments, typing the upstream URL and bearer secret into config is friction. Schema v2 defines a **RecallToken** — a single opaque string that bundles everything a daemon needs to join an upstream, plus optional hints about who issued it.
+
+A token looks like an opaque base64url blob:
+
+```text
+eyJhdXRoX3NlY3JldCI6InMzY3JldCIsImlzc3VlciI6IkFjbWUiLCJ1cHN0cmVhbV91cmwiOiJ3c3M6Ly9yZWNhbGwuYWNtZS5pbnRlcm5hbC9pbmdlc3QifQ
+```
+
+Decoded, it carries:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `upstream_url` | string | `wss://` URL of the upstream `/ingest` endpoint. Required. |
+| `auth_secret` | string | Bearer token the upstream expects. Required. |
+| `display_name_hint` | string \| null | Optional hint shown on dashboards until the employee overrides it. |
+| `issuer` | string \| null | Informational label (e.g. "Acme Corp"). No cryptographic meaning in PR 4. |
+
+### Joining via CLI
+
+Employees run:
+
+```bash
+claude-recall join <token>
+```
+
+The token is decoded, validated, and written to `~/.config/claude-recall/token` with `0600` permissions. On daemon restart, the push transport activates automatically.
+
+To disconnect:
+
+```bash
+claude-recall leave        # prompts for confirmation
+claude-recall leave --yes  # scripted
+```
+
+### Issuing tokens
+
+IT/admins generate tokens with:
+
+```bash
+claude-recall issue \
+  --upstream wss://recall.company.com/ingest \
+  --secret   "$(openssl rand -hex 16)" \
+  --display-name "Default Display" \
+  --issuer   "Acme Corp"
+```
+
+The resulting string goes in an onboarding email, Slack DM, or employee-facing webpage.
+
+### Resolution order
+
+When the daemon starts, it resolves push credentials in this order — higher wins:
+
+1. `CLAUDE_RECALL_UPSTREAM_URL` env var (`CLAUDE_RECALL_TOKEN` is used as plain Bearer).
+2. `CLAUDE_RECALL_TOKEN` env var containing an encoded RecallToken.
+3. `~/.config/claude-recall/token` file written by `claude-recall join`.
+4. Explicit `transports.push` block in `config.yaml`.
+
+This lets power users override a centrally-provisioned token without deleting it.
+
+### Security model (PR 4 level)
+
+- Tokens are **not signed** in PR 4; anyone with the token can mint a connection. The upstream is still expected to verify `auth_secret` against its `/ingest` allowlist (see `/ingest` docs).
+- **Rotate tokens** by issuing a new one and updating the upstream allowlist; old tokens keep working until their secrets are removed from the allowlist.
+- A future PR will upgrade to signed JWTs — the `decode_token(token, verify_key=...)` API is already parameterized for that transition.
+
 ## States
 
 | Value | Name | Meaning |
