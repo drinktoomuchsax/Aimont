@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import socket
 import uuid
@@ -10,6 +11,12 @@ from typing import Any
 
 import yaml
 from pydantic import BaseModel
+
+from claude_recall.auth import TokenDecodeError, decode_token
+
+logger = logging.getLogger(__name__)
+
+TOKEN_FILE_PATH = Path.home() / ".config" / "claude-recall" / "token"
 
 
 class ServerConfig(BaseModel):
@@ -158,14 +165,21 @@ def load_config(path: Path | None = None) -> RecallConfig:
 
 
 def _apply_push_env_overrides(merged: dict[str, Any]) -> None:
-    """Allow enabling PushTransport purely via environment variables.
+    """Allow enabling PushTransport via environment / token file.
 
-    If CLAUDE_RECALL_UPSTREAM_URL is set and no explicit `push` transport
-    is configured, inject one. This lets users opt into cascading without
-    touching config files.
+    Resolution order (highest wins):
+
+    1. CLAUDE_RECALL_UPSTREAM_URL (+ CLAUDE_RECALL_TOKEN as plain Bearer).
+       The "power-user" path: URL and bearer are separate strings.
+    2. CLAUDE_RECALL_TOKEN containing an encoded RecallToken bundle.
+       The "one-string join" path: URL + secret travel together.
+    3. ~/.config/claude-recall/token file (written by `claude-recall join`).
+       The "persistent join" path: no env setup required.
+    4. Explicit config.yaml push transport.
+       The legacy path from PR 2.
     """
-    upstream = os.environ.get("CLAUDE_RECALL_UPSTREAM_URL")
-    if not upstream:
+    url, auth = _resolve_push_credentials()
+    if url is None:
         return
 
     transports = merged.setdefault("transports", {})
@@ -174,18 +188,65 @@ def _apply_push_env_overrides(merged: dict[str, Any]) -> None:
         transports["push"] = {
             "type": "push",
             "enabled": True,
-            "options": {
-                "upstream_url": upstream,
-            },
+            "options": {"upstream_url": url},
         }
         existing = transports["push"]
 
     options = existing.setdefault("options", {})
-    # Env always takes precedence over config file values.
-    options["upstream_url"] = upstream
-    token = os.environ.get("CLAUDE_RECALL_TOKEN")
-    if token:
-        options["auth_token"] = token
+    options["upstream_url"] = url
+    if auth:
+        options["auth_token"] = auth
+
+
+def _resolve_push_credentials() -> tuple[str | None, str | None]:
+    """Return (upstream_url, auth_token) resolved from env / token file.
+
+    Returns (None, None) when nothing is configured, leaving any
+    config.yaml push block untouched so the legacy path still works.
+    """
+    # Level 1: explicit URL env var always wins. Bearer can be either a
+    # plain string or an encoded token (we only care that it gets sent).
+    explicit_url = os.environ.get("CLAUDE_RECALL_UPSTREAM_URL")
+    explicit_token = os.environ.get("CLAUDE_RECALL_TOKEN")
+    if explicit_url:
+        return explicit_url, explicit_token
+
+    # Level 2: CLAUDE_RECALL_TOKEN alone, treated as an encoded bundle.
+    if explicit_token:
+        bundle = _try_decode_token(explicit_token)
+        if bundle is not None:
+            return bundle.upstream_url, bundle.auth_secret
+        # Env variable looked like a plain bearer — but we have no URL
+        # to pair it with. Fall through; a later layer may supply one.
+
+    # Level 3: ~/.config/claude-recall/token file.
+    file_token = _read_token_file()
+    if file_token:
+        bundle = _try_decode_token(file_token)
+        if bundle is not None:
+            return bundle.upstream_url, bundle.auth_secret
+        logger.warning(
+            "Ignoring malformed token at %s; run `claude-recall leave` to remove it.",
+            TOKEN_FILE_PATH,
+        )
+
+    return None, None
+
+
+def _try_decode_token(raw: str) -> Any:
+    try:
+        return decode_token(raw)
+    except TokenDecodeError:
+        return None
+
+
+def _read_token_file() -> str | None:
+    try:
+        if TOKEN_FILE_PATH.is_file():
+            return TOKEN_FILE_PATH.read_text(encoding="utf-8").strip() or None
+    except OSError as e:
+        logger.debug("could not read token file %s: %s", TOKEN_FILE_PATH, e)
+    return None
 
 
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
