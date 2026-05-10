@@ -203,7 +203,7 @@
 
 ---
 
-## PR 3：/ingest endpoint + 防环（级联闭环）
+## PR 3：/ingest endpoint + 防环（级联闭环） ✅ 已完成
 
 ### 目标
 
@@ -299,7 +299,7 @@
 
 ---
 
-## PR 4：Token 携带配置 + 部署文档
+## PR 4：Token 携带配置 + 部署文档 ✅ 已完成（4a 代码 / 4b 文档）
 
 ### 目标
 
@@ -498,4 +498,12 @@
 
 ## 下一步
 
-PR 1（协议骨架）和 PR 2（PushTransport）已完成，下一步进入 **PR 3：/ingest endpoint + 防环（级联闭环）** 的实现与联调。
+PR 1-4 全部完成。Multi-host 协议的 MVP 到此收官：协议骨架、PushTransport、/ingest 闭环、token 配置、部署文档全部就位。
+
+后续可选工作（都不阻塞当前能力）：
+
+- **PR 5：JWT 升级** — 把 token 从 base64 JSON 升级为签名 JWT（`decode_token(verify_key=...)` 已预留接口）。
+- **PR 6：Discovery endpoint** — 员工只需知道公司域名，daemon 自动从 `.well-known/claude-recall-config.json` 拉完整配置。
+- **Prometheus metrics** — daemon 当前无内置指标；用 `/state` 轮询凑合。
+
+实际推进以用户反馈和运维痛点驱动，不再走瀑布节奏。
