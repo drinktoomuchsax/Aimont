@@ -252,13 +252,25 @@ After=network.target
 User=recall
 WorkingDirectory=/opt/claude-recall
 Environment="CLAUDE_RECALL_INGEST_ENABLED=1"
-Environment="CLAUDE_RECALL_INGEST_TOKENS=<secret1>,<secret2>"
+# Secrets live in a root:root 0600 file so they never land in
+# world-readable systemd unit paths, journald output, or config backups.
+EnvironmentFile=/etc/claude-recall/ingest.env
 ExecStart=/opt/claude-recall/.venv/bin/claude-recall daemon --host 0.0.0.0
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
+```
+
+Create the env file separately with strict permissions:
+
+```bash
+sudo install -d -o root -g root -m 0700 /etc/claude-recall
+sudo tee /etc/claude-recall/ingest.env >/dev/null <<'EOF'
+CLAUDE_RECALL_INGEST_TOKENS=secret1,secret2
+EOF
+sudo chmod 0600 /etc/claude-recall/ingest.env
 ```
 
 The daemon is stateless across restarts — sessions and presence reconstruct themselves as downstream daemons reconnect (with some delay, bounded by the push reconnect backoff of up to 60s).
