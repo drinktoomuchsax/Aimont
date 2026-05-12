@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from claude_recall.auth import RecallToken, encode_token
-from claude_recall.config import load_config
+from aimont.auth import AimontToken, encode_token
+from aimont.config import load_config
 
 
 @pytest.fixture(autouse=True)
@@ -15,28 +15,28 @@ def _clean_env(monkeypatch, tmp_path):
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("CLAUDE_RECALL_UPSTREAM_URL", raising=False)
-    monkeypatch.delenv("CLAUDE_RECALL_TOKEN", raising=False)
+    monkeypatch.delenv("AIMONT_UPSTREAM_URL", raising=False)
+    monkeypatch.delenv("AIMONT_TOKEN", raising=False)
     # TOKEN_FILE_PATH was evaluated at import time with the *real* $HOME.
     # Patch it so tests can't possibly touch a developer's real token file.
-    from claude_recall import config as cfg_mod
+    from aimont import config as cfg_mod
     monkeypatch.setattr(
         cfg_mod,
         "TOKEN_FILE_PATH",
-        fake_home / ".config" / "claude-recall" / "token",
+        fake_home / ".config" / "aimont" / "token",
     )
     yield fake_home
 
 
 def _encoded(upstream: str = "wss://token.example.com/ingest", secret: str = "from-token"):
-    return encode_token(RecallToken(upstream_url=upstream, auth_secret=secret))
+    return encode_token(AimontToken(upstream_url=upstream, auth_secret=secret))
 
 
-# ---- CLAUDE_RECALL_TOKEN as encoded bundle ---------------------------------
+# ---- AIMONT_TOKEN as encoded bundle ---------------------------------
 
 
 def test_encoded_token_env_enables_push(monkeypatch):
-    monkeypatch.setenv("CLAUDE_RECALL_TOKEN", _encoded())
+    monkeypatch.setenv("AIMONT_TOKEN", _encoded())
 
     cfg = load_config()
     push = cfg.transports["push"]
@@ -48,8 +48,8 @@ def test_encoded_token_env_enables_push(monkeypatch):
 def test_explicit_upstream_env_wins_over_encoded_token(monkeypatch):
     """When both URL env and an encoded token are present, the explicit
     URL takes precedence — the token is treated as a plain Bearer string."""
-    monkeypatch.setenv("CLAUDE_RECALL_UPSTREAM_URL", "wss://override.example")
-    monkeypatch.setenv("CLAUDE_RECALL_TOKEN", _encoded())
+    monkeypatch.setenv("AIMONT_UPSTREAM_URL", "wss://override.example")
+    monkeypatch.setenv("AIMONT_TOKEN", _encoded())
 
     cfg = load_config()
     push = cfg.transports["push"]
@@ -61,7 +61,7 @@ def test_explicit_upstream_env_wins_over_encoded_token(monkeypatch):
 def test_plain_bearer_token_without_url_does_not_enable_push(monkeypatch):
     """A plain (non-encoded) token env alone shouldn't conjure an
     upstream URL out of thin air."""
-    monkeypatch.setenv("CLAUDE_RECALL_TOKEN", "plain-bearer-no-url")
+    monkeypatch.setenv("AIMONT_TOKEN", "plain-bearer-no-url")
 
     cfg = load_config()
     assert "push" not in cfg.transports
@@ -71,7 +71,7 @@ def test_plain_bearer_token_without_url_does_not_enable_push(monkeypatch):
 
 
 def test_token_file_enables_push(monkeypatch, _clean_env):
-    token_path = _clean_env / ".config" / "claude-recall" / "token"
+    token_path = _clean_env / ".config" / "aimont" / "token"
     token_path.parent.mkdir(parents=True, exist_ok=True)
     token_path.write_text(_encoded())
 
@@ -83,14 +83,14 @@ def test_token_file_enables_push(monkeypatch, _clean_env):
 
 
 def test_env_token_wins_over_file_token(monkeypatch, _clean_env):
-    token_path = _clean_env / ".config" / "claude-recall" / "token"
+    token_path = _clean_env / ".config" / "aimont" / "token"
     token_path.parent.mkdir(parents=True, exist_ok=True)
     token_path.write_text(
         _encoded(upstream="wss://from-file.example", secret="file-secret")
     )
 
     monkeypatch.setenv(
-        "CLAUDE_RECALL_TOKEN",
+        "AIMONT_TOKEN",
         _encoded(upstream="wss://from-env.example", secret="env-secret"),
     )
 
@@ -101,7 +101,7 @@ def test_env_token_wins_over_file_token(monkeypatch, _clean_env):
 
 
 def test_malformed_token_file_is_ignored(monkeypatch, _clean_env):
-    token_path = _clean_env / ".config" / "claude-recall" / "token"
+    token_path = _clean_env / ".config" / "aimont" / "token"
     token_path.parent.mkdir(parents=True, exist_ok=True)
     token_path.write_text("garbage-not-a-token")
 

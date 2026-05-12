@@ -4,9 +4,9 @@ import asyncio
 
 import pytest
 
-from claude_recall.config import StatesConfig, StateTTL
-from claude_recall.models import HookEvent, RecallState
-from claude_recall.session_registry import SessionRegistry
+from aimont.config import StatesConfig, StateTTL
+from aimont.models import HookEvent, AimontState
+from aimont.session_registry import SessionRegistry
 
 
 @pytest.fixture
@@ -17,64 +17,64 @@ def registry(default_config):
 @pytest.mark.asyncio
 async def test_new_session_auto_created(registry):
     session_frame, agg_frame = await registry.handle_transition(
-        "s1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT
+        "s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT
     )
     assert session_frame is not None
     assert session_frame.session_id == "s1"
-    assert session_frame.state == RecallState.WORKING
+    assert session_frame.state == AimontState.WORKING
 
 
 @pytest.mark.asyncio
 async def test_aggregate_is_max_priority(registry):
-    await registry.handle_transition("s1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
-    await registry.handle_transition("s2", RecallState.ERROR, HookEvent.STOP_FAILURE)
+    await registry.handle_transition("s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
+    await registry.handle_transition("s2", AimontState.ERROR, HookEvent.STOP_FAILURE)
 
     agg = await registry.get_aggregate()
-    assert agg.state == RecallState.ERROR
+    assert agg.state == AimontState.ERROR
     assert agg.active_sessions == 2
 
 
 @pytest.mark.asyncio
 async def test_session_end_removes_session(registry):
-    await registry.handle_transition("s1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
-    await registry.handle_transition("s2", RecallState.IDLE, HookEvent.SESSION_START)
+    await registry.handle_transition("s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
+    await registry.handle_transition("s2", AimontState.IDLE, HookEvent.SESSION_START)
 
     session_frame, agg_frame = await registry.handle_transition(
-        "s1", RecallState.OFF, HookEvent.SESSION_END
+        "s1", AimontState.OFF, HookEvent.SESSION_END
     )
 
     assert session_frame is not None
-    assert session_frame.state == RecallState.OFF
+    assert session_frame.state == AimontState.OFF
     assert agg_frame.active_sessions == 1
-    assert agg_frame.state == RecallState.IDLE
+    assert agg_frame.state == AimontState.IDLE
 
 
 @pytest.mark.asyncio
 async def test_all_sessions_end_gives_off(registry):
-    await registry.handle_transition("s1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
-    await registry.handle_transition("s1", RecallState.OFF, HookEvent.SESSION_END)
+    await registry.handle_transition("s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
+    await registry.handle_transition("s1", AimontState.OFF, HookEvent.SESSION_END)
 
     agg = await registry.get_aggregate()
-    assert agg.state == RecallState.OFF
+    assert agg.state == AimontState.OFF
     assert agg.active_sessions == 0
 
 
 @pytest.mark.asyncio
 async def test_one_session_change_doesnt_affect_other(registry):
-    await registry.handle_transition("s1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
-    await registry.handle_transition("s2", RecallState.IDLE, HookEvent.SESSION_START)
+    await registry.handle_transition("s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
+    await registry.handle_transition("s2", AimontState.IDLE, HookEvent.SESSION_START)
 
-    await registry.handle_transition("s1", RecallState.ERROR, HookEvent.STOP_FAILURE)
+    await registry.handle_transition("s1", AimontState.ERROR, HookEvent.STOP_FAILURE)
 
     s2_state = await registry.get_session_state("s2")
-    assert s2_state == RecallState.IDLE
+    assert s2_state == AimontState.IDLE
 
 
 @pytest.mark.asyncio
 async def test_breakdown_counts(registry):
-    await registry.handle_transition("s1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
-    await registry.handle_transition("s2", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
-    await registry.handle_transition("s3", RecallState.IDLE, HookEvent.SESSION_START)
+    await registry.handle_transition("s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
+    await registry.handle_transition("s2", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
+    await registry.handle_transition("s3", AimontState.IDLE, HookEvent.SESSION_START)
 
     agg = await registry.get_aggregate()
     assert agg.breakdown == {"working": 2, "idle": 1}
@@ -86,7 +86,7 @@ async def test_cleanup_expired():
     config = StatesConfig()
     registry = SessionRegistry(config, session_timeout_sec=0.1)
 
-    await registry.handle_transition("s1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
+    await registry.handle_transition("s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
     await asyncio.sleep(0.15)
 
     removed = await registry.cleanup_expired()
@@ -104,8 +104,8 @@ async def test_get_nonexistent_session_returns_none(registry):
 
 @pytest.mark.asyncio
 async def test_list_sessions(registry):
-    await registry.handle_transition("s1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
-    await registry.handle_transition("s2", RecallState.IDLE, HookEvent.SESSION_START)
+    await registry.handle_transition("s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
+    await registry.handle_transition("s2", AimontState.IDLE, HookEvent.SESSION_START)
 
     sessions = await registry.list_sessions()
     assert sessions["s1"]["state"] == "working"
@@ -117,7 +117,7 @@ async def test_list_sessions(registry):
 @pytest.mark.asyncio
 async def test_agent_kind_stored_and_emitted(registry):
     frame, _ = await registry.handle_transition(
-        "s1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT, agent_kind="codex"
+        "s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT, agent_kind="codex"
     )
     assert frame is not None
     assert frame.agent_kind == "codex"
@@ -131,10 +131,10 @@ async def test_agent_kind_stored_and_emitted(registry):
 @pytest.mark.asyncio
 async def test_mixed_agent_sessions(registry):
     await registry.handle_transition(
-        "c1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT, agent_kind="claude"
+        "c1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT, agent_kind="claude"
     )
     await registry.handle_transition(
-        "c2", RecallState.IDLE, HookEvent.SESSION_START, agent_kind="codex"
+        "c2", AimontState.IDLE, HookEvent.SESSION_START, agent_kind="codex"
     )
 
     sessions = await registry.list_sessions()
@@ -145,10 +145,10 @@ async def test_mixed_agent_sessions(registry):
 @pytest.mark.asyncio
 async def test_agent_kind_session_end_preserved(registry):
     await registry.handle_transition(
-        "c2", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT, agent_kind="codex"
+        "c2", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT, agent_kind="codex"
     )
     frame, _ = await registry.handle_transition(
-        "c2", RecallState.OFF, HookEvent.SESSION_END
+        "c2", AimontState.OFF, HookEvent.SESSION_END
     )
     assert frame is not None
     assert frame.agent_kind == "codex"

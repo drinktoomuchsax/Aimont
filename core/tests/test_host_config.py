@@ -4,7 +4,7 @@ import socket
 
 import pytest
 
-from claude_recall.config import HostConfig
+from aimont.config import HostConfig
 
 
 def test_resolve_id_uses_hostname_by_default():
@@ -18,7 +18,7 @@ def test_resolve_id_config_overrides_hostname():
 
 
 def test_resolve_id_env_overrides_config(monkeypatch):
-    monkeypatch.setenv("CLAUDE_RECALL_HOST_ID", "env-name")
+    monkeypatch.setenv("AIMONT_HOST_ID", "env-name")
     cfg = HostConfig(id="config-name")
     assert cfg.resolve_id() == "env-name"
 
@@ -34,13 +34,13 @@ def test_resolve_display_name_from_config():
 
 
 def test_resolve_display_name_env_overrides_config(monkeypatch):
-    monkeypatch.setenv("CLAUDE_RECALL_HOST_DISPLAY_NAME", "From Env")
+    monkeypatch.setenv("AIMONT_HOST_DISPLAY_NAME", "From Env")
     cfg = HostConfig(display_name="From Config")
     assert cfg.resolve_display_name() == "From Env"
 
 
 def test_resolve_id_fallback_when_hostname_empty(monkeypatch):
-    monkeypatch.delenv("CLAUDE_RECALL_HOST_ID", raising=False)
+    monkeypatch.delenv("AIMONT_HOST_ID", raising=False)
     monkeypatch.setattr(socket, "gethostname", lambda: "")
     cfg = HostConfig()
     # Fallback must be unique per machine (not a fixed literal) so multiple
@@ -57,7 +57,7 @@ def test_resolve_id_fallback_when_hostname_empty(monkeypatch):
 def test_resolve_id_caches_hostname(monkeypatch):
     """Even when hostname is valid, cache it so the id stays stable if
     gethostname() starts returning something different mid-process."""
-    monkeypatch.delenv("CLAUDE_RECALL_HOST_ID", raising=False)
+    monkeypatch.delenv("AIMONT_HOST_ID", raising=False)
     values = iter(["host-at-startup", "renamed-later", "renamed-again"])
     monkeypatch.setattr(socket, "gethostname", lambda: next(values))
     cfg = HostConfig()

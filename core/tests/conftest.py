@@ -2,7 +2,7 @@
 
 import pytest
 
-from claude_recall.config import StatesConfig, StateTTL
+from aimont.config import StatesConfig, StateTTL
 
 
 @pytest.fixture

@@ -4,9 +4,9 @@ import asyncio
 
 import pytest
 
-from claude_recall.config import DEFAULT_RULES, RuleConfig
-from claude_recall.models import HookEvent, RecallState
-from claude_recall.rules import RuleEngine
+from aimont.config import DEFAULT_RULES, RuleConfig
+from aimont.models import HookEvent, AimontState
+from aimont.rules import RuleEngine
 
 
 @pytest.fixture
@@ -17,31 +17,31 @@ def engine():
 
 def test_stop_maps_to_awaiting_input(engine):
     result = engine.resolve(HookEvent.STOP)
-    assert result.state == RecallState.AWAITING_INPUT
+    assert result.state == AimontState.AWAITING_INPUT
     assert result.force is True
 
 
 def test_permission_request_maps_to_awaiting_permission(engine):
     result = engine.resolve(HookEvent.PERMISSION_REQUEST)
-    assert result.state == RecallState.AWAITING_PERMISSION
+    assert result.state == AimontState.AWAITING_PERMISSION
     assert result.force is False
 
 
 def test_user_prompt_maps_to_working(engine):
     result = engine.resolve(HookEvent.USER_PROMPT_SUBMIT)
-    assert result.state == RecallState.WORKING
+    assert result.state == AimontState.WORKING
     assert result.force is True
 
 
 def test_session_end_maps_to_off(engine):
     result = engine.resolve(HookEvent.SESSION_END)
-    assert result.state == RecallState.OFF
+    assert result.state == AimontState.OFF
     assert result.force is True
 
 
 def test_stop_failure_maps_to_error(engine):
     result = engine.resolve(HookEvent.STOP_FAILURE)
-    assert result.state == RecallState.ERROR
+    assert result.state == AimontState.ERROR
     assert result.force is False
 
 
@@ -56,7 +56,7 @@ def test_debounce_blocks_rapid_fire():
     engine = RuleEngine(rules)
 
     first = engine.resolve(HookEvent.PRE_TOOL_USE)
-    assert first.state == RecallState.TOOL_ACTIVE
+    assert first.state == AimontState.TOOL_ACTIVE
 
     second = engine.resolve(HookEvent.PRE_TOOL_USE)
     assert second is None
@@ -68,12 +68,12 @@ async def test_debounce_expires():
     engine = RuleEngine(rules)
 
     first = engine.resolve(HookEvent.PRE_TOOL_USE)
-    assert first.state == RecallState.TOOL_ACTIVE
+    assert first.state == AimontState.TOOL_ACTIVE
 
     await asyncio.sleep(0.15)
 
     second = engine.resolve(HookEvent.PRE_TOOL_USE)
-    assert second.state == RecallState.TOOL_ACTIVE
+    assert second.state == AimontState.TOOL_ACTIVE
 
 
 def test_force_events():

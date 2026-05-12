@@ -18,15 +18,15 @@ import pytest
 import uvicorn
 import websockets
 
-from claude_recall.config import (
+from aimont.config import (
     HostConfig,
     IngestConfig,
-    RecallConfig,
+    AimontConfig,
     StatesConfig,
     TransportConfig,
 )
-from claude_recall.models import HostIdentity, RecallState, StateFrame
-from claude_recall.server import App, create_api
+from aimont.models import HostIdentity, AimontState, StateFrame
+from aimont.server import App, create_api
 
 
 def _free_port() -> int:
@@ -57,7 +57,7 @@ async def _spawn_daemon(
             enabled=True,
             options={"upstream_url": upstream_url},
         )
-    config = RecallConfig(
+    config = AimontConfig(
         host=HostConfig(id=host_id),
         states=StatesConfig(),
         transports=transports,
@@ -96,7 +96,7 @@ async def _spawn_daemon(
 
 async def _wait_for_push_connection(app_obj: App, timeout: float = 3.0) -> None:
     """Wait until an App's push transport (if configured) is connected."""
-    from claude_recall.transports.push import PushTransport
+    from aimont.transports.push import PushTransport
     deadline = asyncio.get_event_loop().time() + timeout
     push = next((t for t in app_obj.transports if isinstance(t, PushTransport)), None)
     if push is None:
@@ -127,10 +127,10 @@ async def test_two_level_cascade_relays_state_frame():
                 except asyncio.TimeoutError:
                     pass
 
-                from claude_recall.models import HookEvent
+                from aimont.models import HookEvent
                 session_frame, _ = await A.registry.handle_transition(
                     "sess-Z",
-                    RecallState.WORKING,
+                    AimontState.WORKING,
                     HookEvent.USER_PROMPT_SUBMIT,
                     force=True,
                 )
@@ -173,8 +173,8 @@ async def test_loop_prevention_when_frame_already_passed_through_self():
                     host=HostIdentity(host_id="attacker"),
                     forwarded_by=["upstream-B"],
                     session_id="evil",
-                    state=RecallState.ERROR,
-                    previous=RecallState.IDLE,
+                    state=AimontState.ERROR,
+                    previous=AimontState.IDLE,
                     timestamp=datetime.now(timezone.utc),
                 )
                 await ingest.send(forged.model_dump_json())
@@ -212,10 +212,10 @@ async def test_three_level_cascade_accumulates_forwarded_by():
                     except asyncio.TimeoutError:
                         pass
 
-                    from claude_recall.models import HookEvent
+                    from aimont.models import HookEvent
                     session_frame, _ = await A.registry.handle_transition(
                         "trace-me",
-                        RecallState.WORKING,
+                        AimontState.WORKING,
                         HookEvent.USER_PROMPT_SUBMIT,
                         force=True,
                     )

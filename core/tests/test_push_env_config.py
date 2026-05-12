@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from claude_recall.config import load_config
+from aimont.config import load_config
 
 
 @pytest.fixture(autouse=True)
@@ -12,12 +12,12 @@ def _clean_env(monkeypatch, tmp_path):
     """Isolate every test from the ambient config file system and env."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("CLAUDE_RECALL_UPSTREAM_URL", raising=False)
-    monkeypatch.delenv("CLAUDE_RECALL_TOKEN", raising=False)
+    monkeypatch.delenv("AIMONT_UPSTREAM_URL", raising=False)
+    monkeypatch.delenv("AIMONT_TOKEN", raising=False)
 
 
 def test_env_only_injects_push_transport(monkeypatch):
-    monkeypatch.setenv("CLAUDE_RECALL_UPSTREAM_URL", "wss://upstream.example.com/ingest")
+    monkeypatch.setenv("AIMONT_UPSTREAM_URL", "wss://upstream.example.com/ingest")
 
     cfg = load_config()
     assert "push" in cfg.transports
@@ -29,8 +29,8 @@ def test_env_only_injects_push_transport(monkeypatch):
 
 
 def test_env_token_added_to_push_options(monkeypatch):
-    monkeypatch.setenv("CLAUDE_RECALL_UPSTREAM_URL", "wss://upstream.example.com/ingest")
-    monkeypatch.setenv("CLAUDE_RECALL_TOKEN", "secret-xyz")
+    monkeypatch.setenv("AIMONT_UPSTREAM_URL", "wss://upstream.example.com/ingest")
+    monkeypatch.setenv("AIMONT_TOKEN", "secret-xyz")
 
     cfg = load_config()
     push = cfg.transports["push"]
@@ -43,7 +43,7 @@ def test_no_upstream_url_means_no_push_transport():
 
 
 def test_env_overrides_existing_yaml_config(monkeypatch, tmp_path):
-    cfg_yaml = tmp_path / ".claude-recall.yaml"
+    cfg_yaml = tmp_path / ".aimont.yaml"
     cfg_yaml.write_text(
         "transports:\n"
         "  push:\n"
@@ -53,8 +53,8 @@ def test_env_overrides_existing_yaml_config(monkeypatch, tmp_path):
         "      upstream_url: wss://from-yaml.example.com\n"
         "      auth_token: yaml-token\n"
     )
-    monkeypatch.setenv("CLAUDE_RECALL_UPSTREAM_URL", "wss://from-env.example.com")
-    monkeypatch.setenv("CLAUDE_RECALL_TOKEN", "env-token")
+    monkeypatch.setenv("AIMONT_UPSTREAM_URL", "wss://from-env.example.com")
+    monkeypatch.setenv("AIMONT_TOKEN", "env-token")
 
     cfg = load_config()
     push = cfg.transports["push"]

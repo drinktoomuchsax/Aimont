@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from claude_recall.auth import RecallToken, encode_token
-from claude_recall.cli import app
+from aimont.auth import AimontToken, encode_token
+from aimont.cli import app
 
 
 @pytest.fixture
@@ -24,8 +24,8 @@ def token_home(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(fake_home))
     # config.TOKEN_FILE_PATH is evaluated at import time, so we have to
     # reach in and patch it.
-    from claude_recall import config as cfg_mod
-    patched = fake_home / ".config" / "claude-recall" / "token"
+    from aimont import config as cfg_mod
+    patched = fake_home / ".config" / "aimont" / "token"
     monkeypatch.setattr(cfg_mod, "TOKEN_FILE_PATH", patched)
     return patched
 
@@ -35,7 +35,7 @@ def _make_token(
     secret: str = "s3cret",
     **kwargs,
 ) -> str:
-    return encode_token(RecallToken(upstream_url=upstream, auth_secret=secret, **kwargs))
+    return encode_token(AimontToken(upstream_url=upstream, auth_secret=secret, **kwargs))
 
 
 # ---- issue ---------------------------------------------------------------
@@ -46,7 +46,7 @@ def test_issue_prints_decodable_token(runner):
         app,
         [
             "issue",
-            "--upstream", "wss://recall.company.com/ingest",
+            "--upstream", "wss://aimont.company.com/ingest",
             "--secret", "top-secret",
             "--display-name", "Default Display",
             "--issuer", "Acme",
@@ -54,9 +54,9 @@ def test_issue_prints_decodable_token(runner):
     )
     assert result.exit_code == 0, result.output
     token = result.output.strip()
-    from claude_recall.auth import decode_token
+    from aimont.auth import decode_token
     bundle = decode_token(token)
-    assert bundle.upstream_url == "wss://recall.company.com/ingest"
+    assert bundle.upstream_url == "wss://aimont.company.com/ingest"
     assert bundle.auth_secret == "top-secret"
     assert bundle.display_name_hint == "Default Display"
     assert bundle.issuer == "Acme"
