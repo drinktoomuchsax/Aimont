@@ -14,13 +14,13 @@ from datetime import datetime, timezone
 import pytest
 import websockets
 
-from claude_recall.models import (
+from aimont.models import (
     AggregateFrame,
     HostIdentity,
-    RecallState,
+    AimontState,
     StateFrame,
 )
-from claude_recall.transports.push import PushTransport
+from aimont.transports.push import PushTransport
 
 
 # ---- helpers --------------------------------------------------------------
@@ -90,12 +90,12 @@ async def fake_upstream():
         await srv.stop()
 
 
-def _make_state_frame(state=RecallState.WORKING) -> StateFrame:
+def _make_state_frame(state=AimontState.WORKING) -> StateFrame:
     return StateFrame(
         host=HostIdentity(host_id="test-host"),
         session_id="s1",
         state=state,
-        previous=RecallState.IDLE,
+        previous=AimontState.IDLE,
         timestamp=datetime.now(timezone.utc),
     )
 
@@ -103,7 +103,7 @@ def _make_state_frame(state=RecallState.WORKING) -> StateFrame:
 def _make_aggregate_frame() -> AggregateFrame:
     return AggregateFrame(
         host=HostIdentity(host_id="test-host"),
-        state=RecallState.WORKING,
+        state=AimontState.WORKING,
         active_sessions=1,
         breakdown={"working": 1},
         timestamp=datetime.now(timezone.utc),
@@ -236,7 +236,7 @@ async def test_aggregate_frame_is_relayed(fake_upstream):
 
 async def test_reconnects_after_server_drops(monkeypatch):
     """Client should reconnect after losing its upstream connection."""
-    import claude_recall.transports.push as push_mod
+    import aimont.transports.push as push_mod
     monkeypatch.setattr(push_mod, "_MIN_BACKOFF_SEC", 0.05)
     monkeypatch.setattr(push_mod, "_MAX_BACKOFF_SEC", 0.05)
 

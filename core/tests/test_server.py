@@ -3,7 +3,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from claude_recall.server import api, lifespan
+from aimont.server import api, lifespan
 
 
 @pytest.fixture

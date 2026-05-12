@@ -1,4 +1,4 @@
-"""Tests for the RecallToken encode/decode codec (PR 4)."""
+"""Tests for the AimontToken encode/decode codec (PR 4)."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ import json
 
 import pytest
 
-from claude_recall.auth import (
-    RecallToken,
+from aimont.auth import (
+    AimontToken,
     TokenDecodeError,
     decode_token,
     encode_token,
@@ -16,8 +16,8 @@ from claude_recall.auth import (
 
 
 def test_roundtrip_minimal():
-    original = RecallToken(
-        upstream_url="wss://recall.example.com/ingest",
+    original = AimontToken(
+        upstream_url="wss://aimont.example.com/ingest",
         auth_secret="secret-xyz",
     )
     encoded = encode_token(original)
@@ -29,7 +29,7 @@ def test_roundtrip_minimal():
 
 
 def test_roundtrip_with_optional_fields():
-    original = RecallToken(
+    original = AimontToken(
         upstream_url="wss://example/ingest",
         auth_secret="s",
         display_name_hint="zhang-mbp",
@@ -40,7 +40,7 @@ def test_roundtrip_with_optional_fields():
 
 
 def test_encoded_is_url_safe_and_unpadded():
-    bundle = RecallToken(
+    bundle = AimontToken(
         upstream_url="wss://example/ingest" + "x" * 20,  # ensures length not div by 3
         auth_secret="s",
     )
@@ -54,7 +54,7 @@ def test_encoded_is_url_safe_and_unpadded():
 
 def test_decode_accepts_padded_input():
     """Users may paste tokens copied from tools that re-add '=' padding."""
-    bundle = RecallToken(upstream_url="wss://x", auth_secret="s")
+    bundle = AimontToken(upstream_url="wss://x", auth_secret="s")
     encoded = encode_token(bundle)
     padded = encoded + "==="
     decode_token(padded)  # must not raise
@@ -92,7 +92,7 @@ def test_decode_missing_required_fields_raises():
 
 def test_verify_key_parameter_is_accepted_but_ignored():
     """verify_key is reserved for the future JWT PR; today it's a no-op."""
-    bundle = RecallToken(upstream_url="wss://x", auth_secret="s")
+    bundle = AimontToken(upstream_url="wss://x", auth_secret="s")
     encoded = encode_token(bundle)
     # Whatever we pass, it must not affect decode behavior yet.
     decoded = decode_token(encoded, verify_key="anything-goes")

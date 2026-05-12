@@ -4,16 +4,16 @@ from datetime import datetime, timezone
 
 import pytest
 
-from claude_recall.models import (
+from aimont.models import (
     FRAME_SCHEMA_VERSION,
     AggregateFrame,
     HookEvent,
     HostIdentity,
     PresenceFrame,
-    RecallState,
+    AimontState,
     StateFrame,
 )
-from claude_recall.session_registry import SessionRegistry
+from aimont.session_registry import SessionRegistry
 
 
 def test_schema_version_is_v2():
@@ -23,8 +23,8 @@ def test_schema_version_is_v2():
 def test_state_frame_defaults_schema_version():
     frame = StateFrame(
         session_id="s1",
-        state=RecallState.WORKING,
-        previous=RecallState.IDLE,
+        state=AimontState.WORKING,
+        previous=AimontState.IDLE,
         timestamp=datetime.now(timezone.utc),
     )
     assert frame.schema_version == FRAME_SCHEMA_VERSION
@@ -35,7 +35,7 @@ def test_state_frame_defaults_schema_version():
 
 def test_aggregate_frame_defaults_schema_version():
     frame = AggregateFrame(
-        state=RecallState.WORKING,
+        state=AimontState.WORKING,
         active_sessions=1,
         breakdown={"working": 1},
         timestamp=datetime.now(timezone.utc),
@@ -48,7 +48,7 @@ def test_aggregate_frame_defaults_schema_version():
 
 def test_schema_version_serialized_in_json():
     frame = AggregateFrame(
-        state=RecallState.IDLE,
+        state=AimontState.IDLE,
         active_sessions=0,
         breakdown={},
         timestamp=datetime.now(timezone.utc),
@@ -61,13 +61,13 @@ def test_schema_version_serialized_in_json():
 
 def test_message_id_unique_per_frame():
     f1 = AggregateFrame(
-        state=RecallState.IDLE,
+        state=AimontState.IDLE,
         active_sessions=0,
         breakdown={},
         timestamp=datetime.now(timezone.utc),
     )
     f2 = AggregateFrame(
-        state=RecallState.IDLE,
+        state=AimontState.IDLE,
         active_sessions=0,
         breakdown={},
         timestamp=datetime.now(timezone.utc),
@@ -112,7 +112,7 @@ def test_presence_frame_offline_with_last_active():
 
 def test_forwarded_by_accepts_list():
     frame = AggregateFrame(
-        state=RecallState.IDLE,
+        state=AimontState.IDLE,
         active_sessions=0,
         breakdown={},
         forwarded_by=["host-a", "host-b"],
@@ -125,7 +125,7 @@ def test_forwarded_by_accepts_list():
 async def test_registry_emits_frames_with_schema_version(default_config):
     registry = SessionRegistry(default_config)
     session_frame, aggregate_frame = await registry.handle_transition(
-        "s1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT
+        "s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT
     )
     assert session_frame is not None
     assert session_frame.schema_version == FRAME_SCHEMA_VERSION
@@ -138,7 +138,7 @@ async def test_registry_stamps_host_identity(default_config):
     host = HostIdentity(host_id="test-host", display_name="Test Host")
     registry = SessionRegistry(default_config, host_identity=host)
     session_frame, aggregate_frame = await registry.handle_transition(
-        "s1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT
+        "s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT
     )
     assert session_frame is not None
     assert session_frame.host == host
@@ -150,10 +150,10 @@ async def test_registry_stamps_host_identity(default_config):
 async def test_registry_frames_have_unique_message_ids(default_config):
     registry = SessionRegistry(default_config)
     f1, _ = await registry.handle_transition(
-        "s1", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT
+        "s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT
     )
     f2, _ = await registry.handle_transition(
-        "s2", RecallState.WORKING, HookEvent.USER_PROMPT_SUBMIT
+        "s2", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT
     )
     assert f1 is not None
     assert f2 is not None

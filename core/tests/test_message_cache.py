@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from claude_recall.message_cache import MessageIdCache
+from aimont.message_cache import MessageIdCache
 
 
 async def test_add_new_returns_true():

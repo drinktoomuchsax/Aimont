@@ -11,8 +11,8 @@ from unittest.mock import patch
 
 import pytest
 
-from claude_recall import codex_probe
-from claude_recall.codex_probe import CodexProbe
+from aimont import codex_probe
+from aimont.codex_probe import CodexProbe
 
 
 class FakeProc:

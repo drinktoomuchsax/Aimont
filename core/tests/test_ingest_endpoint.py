@@ -18,22 +18,22 @@ import pytest
 import uvicorn
 import websockets
 
-from claude_recall.config import (
+from aimont.config import (
     HostConfig,
     IngestConfig,
-    RecallConfig,
+    AimontConfig,
     StatesConfig,
     TransportConfig,
 )
-from claude_recall.models import (
+from aimont.models import (
     AggregateFrame,
     HostIdentity,
     PresenceFrame,
-    RecallState,
+    AimontState,
     StateFrame,
 )
-from claude_recall.rules import RuleEngine
-from claude_recall.server import App, create_api
+from aimont.rules import RuleEngine
+from aimont.server import App, create_api
 
 
 def _free_port() -> int:
@@ -43,7 +43,7 @@ def _free_port() -> int:
 
 
 @contextlib.asynccontextmanager
-async def _running_daemon(config: RecallConfig) -> AsyncIterator[tuple[App, str]]:
+async def _running_daemon(config: AimontConfig) -> AsyncIterator[tuple[App, str]]:
     """Start a live daemon with the given config; yield (app, ws_base_url).
 
     We build the App manually and hand it to a dedicated FastAPI instance
@@ -88,9 +88,9 @@ def _default_config(
     ingest_enabled: bool = False,
     allowed_tokens: list[str] | None = None,
     host_id: str = "upstream-host",
-) -> RecallConfig:
+) -> AimontConfig:
     """Minimal config for ingest tests — no transports by default."""
-    return RecallConfig(
+    return AimontConfig(
         host=HostConfig(id=host_id),
         states=StatesConfig(),
         transports={
@@ -109,8 +109,8 @@ def _make_state_frame(session_id="s1", host_id="downstream-host") -> StateFrame:
     return StateFrame(
         host=HostIdentity(host_id=host_id),
         session_id=session_id,
-        state=RecallState.WORKING,
-        previous=RecallState.IDLE,
+        state=AimontState.WORKING,
+        previous=AimontState.IDLE,
         timestamp=datetime.now(timezone.utc),
     )
 
