@@ -2,7 +2,7 @@
 
 This guide shows how to aggregate Claude Code state from multiple machines — your own laptops, a small team, or a whole company — onto a single dashboard.
 
-If you only use Claude-Recall on one machine, you don't need this guide. The default single-daemon setup is documented in the root `README.md`.
+If you only use Aimont on one machine, you don't need this guide. The default single-daemon setup is documented in the root `README.md`.
 
 For the wire protocol details (frame formats, state machine, loop prevention), see [`protocol.md`](protocol.md). This document is about **operational deployment**, not protocol internals.
 
@@ -13,7 +13,7 @@ For the wire protocol details (frame formats, state machine, loop prevention), s
 ```text
 ┌────────────────┐  ┌────────────────┐  ┌────────────────┐
 │ Alice's Mac    │  │ Bob's Linux    │  │ Carol's Mac    │
-│ claude-recall  │  │ claude-recall  │  │ claude-recall  │
+│ aimont  │  │ aimont  │  │ aimont  │
 └────────┬───────┘  └────────┬───────┘  └────────┬───────┘
          │                   │                   │
          │ wss outbound      │ wss outbound      │ wss outbound
@@ -29,7 +29,7 @@ For the wire protocol details (frame formats, state machine, loop prevention), s
                    ▼
          ┌─────────────────┐          ┌─────────────────┐
          │  Upstream       │─────────▶│  Browser        │
-         │  claude-recall  │ /ws      │  dashboard      │
+         │  aimont  │ /ws      │  dashboard      │
          │  daemon         │          │  (any viewer)   │
          │  (/ingest)      │          └─────────────────┘
          └─────────────────┘
@@ -60,13 +60,13 @@ Your own machines only: work laptop + home machine + a VPS you already have. You
 uv sync
 export CLAUDE_RECALL_INGEST_ENABLED=1
 # No allowlist — only accessible over private network.
-uv run claude-recall daemon --host 0.0.0.0 --port 8765
+uv run aimont daemon --host 0.0.0.0 --port 8765
 ```
 
 **Downstream** (each laptop):
 ```bash
 export CLAUDE_RECALL_UPSTREAM_URL=ws://vps.internal:8765/ingest
-uv run claude-recall daemon
+uv run aimont daemon
 ```
 
 Point your browser viewer at `http://vps.internal:8765/ws?mode=all`.
@@ -107,24 +107,24 @@ cloudflared tunnel run recall &
 export CLAUDE_RECALL_INGEST_ENABLED=1
 export CLAUDE_RECALL_INGEST_TOKENS=$(openssl rand -hex 16)
 umask 077
-mkdir -p ~/.config/claude-recall
-printf '%s\n' "$CLAUDE_RECALL_INGEST_TOKENS" > ~/.config/claude-recall/ingest-secret
-echo "Ingest secret saved to ~/.config/claude-recall/ingest-secret (0600)"
-uv run claude-recall daemon
+mkdir -p ~/.config/aimont
+printf '%s\n' "$CLAUDE_RECALL_INGEST_TOKENS" > ~/.config/aimont/ingest-secret
+echo "Ingest secret saved to ~/.config/aimont/ingest-secret (0600)"
+uv run aimont daemon
 ```
 
 **Issue a token per teammate** (from the admin machine):
 ```bash
-uv run claude-recall issue \
+uv run aimont issue \
   --upstream wss://recall.yourteam.com/ingest \
-  --secret   "$(< ~/.config/claude-recall/ingest-secret)" \
+  --secret   "$(< ~/.config/aimont/ingest-secret)" \
   --issuer   "Your Team Name"
 # Prints an opaque token string — share privately (1Password, DM, etc.).
 ```
 
 **Each teammate:**
 ```bash
-uv run claude-recall join <token>
+uv run aimont join <token>
 # Restart their daemon; it now pushes to recall.yourteam.com.
 ```
 
@@ -196,17 +196,17 @@ Three ways for a daemon to know where to push. Pick whichever suits your ops sty
 ### Via token (recommended for non-developers)
 
 ```bash
-uv run claude-recall issue --upstream wss://... --secret ... > team-token.txt
+uv run aimont issue --upstream wss://... --secret ... > team-token.txt
 # Distribute team-token.txt (privately).
 
 # Each teammate:
-uv run claude-recall join "$(< team-token.txt)"
+uv run aimont join "$(< team-token.txt)"
 ```
 
-The token file lands at `~/.config/claude-recall/token` with `0600` permissions. Removing is symmetric:
+The token file lands at `~/.config/aimont/token` with `0600` permissions. Removing is symmetric:
 
 ```bash
-uv run claude-recall leave
+uv run aimont leave
 ```
 
 ### Via environment variables (recommended for CI / scripted setups)
@@ -214,7 +214,7 @@ uv run claude-recall leave
 ```bash
 export CLAUDE_RECALL_UPSTREAM_URL=wss://recall.yourteam.com/ingest
 export CLAUDE_RECALL_TOKEN=<the bearer secret>
-uv run claude-recall daemon
+uv run aimont daemon
 ```
 
 This is the simplest form when you already have a secrets manager injecting env vars.
@@ -222,7 +222,7 @@ This is the simplest form when you already have a secrets manager injecting env 
 ### Via yaml (recommended for version-controlled dev-machine configs)
 
 ```yaml
-# ~/.config/claude-recall/config.yaml
+# ~/.config/aimont/config.yaml
 transports:
   push:
     type: push
@@ -243,19 +243,19 @@ Does not work well for distribution (secret ends up in config files); best for p
 Treat the upstream like any other lightweight service. A systemd unit example:
 
 ```ini
-# /etc/systemd/system/claude-recall.service
+# /etc/systemd/system/aimont.service
 [Unit]
-Description=Claude-Recall upstream daemon
+Description=Aimont upstream daemon
 After=network.target
 
 [Service]
 User=recall
-WorkingDirectory=/opt/claude-recall
+WorkingDirectory=/opt/aimont
 Environment="CLAUDE_RECALL_INGEST_ENABLED=1"
 # Secrets live in a root:root 0600 file so they never land in
 # world-readable systemd unit paths, journald output, or config backups.
-EnvironmentFile=/etc/claude-recall/ingest.env
-ExecStart=/opt/claude-recall/.venv/bin/claude-recall daemon --host 0.0.0.0
+EnvironmentFile=/etc/aimont/ingest.env
+ExecStart=/opt/aimont/.venv/bin/aimont daemon --host 0.0.0.0
 Restart=on-failure
 RestartSec=5
 
@@ -266,18 +266,18 @@ WantedBy=multi-user.target
 Create the env file separately with strict permissions:
 
 ```bash
-sudo install -d -o root -g root -m 0700 /etc/claude-recall
-sudo tee /etc/claude-recall/ingest.env >/dev/null <<'EOF'
+sudo install -d -o root -g root -m 0700 /etc/aimont
+sudo tee /etc/aimont/ingest.env >/dev/null <<'EOF'
 CLAUDE_RECALL_INGEST_TOKENS=secret1,secret2
 EOF
-sudo chmod 0600 /etc/claude-recall/ingest.env
+sudo chmod 0600 /etc/aimont/ingest.env
 ```
 
 The daemon is stateless across restarts — sessions and presence reconstruct themselves as downstream daemons reconnect (with some delay, bounded by the push reconnect backoff of up to 60s).
 
 ### Hardware sizing
 
-Claude-Recall is extremely lightweight; state machines and WebSocket fan-out are the whole workload. Reference numbers from internal benchmarks:
+Aimont is extremely lightweight; state machines and WebSocket fan-out are the whole workload. Reference numbers from internal benchmarks:
 
 | Scale | RAM (approx) | CPU | Notes |
 |-------|--------------|-----|-------|
@@ -294,7 +294,7 @@ The daemon logs to stdout/stderr; under systemd that routes to journald. Useful 
 
 ```bash
 # Ingest connection drops, token rejections, loop-prevention hits.
-journalctl -u claude-recall -f | grep -i "ingest\|reject\|loop\|presence"
+journalctl -u aimont -f | grep -i "ingest\|reject\|loop\|presence"
 
 # How many daemons are currently connected:
 curl -s http://localhost:8765/state | jq .active_sessions
@@ -313,7 +313,7 @@ No built-in Prometheus metrics today — you can infer health from `/state` poll
 
 Walk down the chain:
 
-1. **Is push enabled?** Check `~/.config/claude-recall/token` exists, or the env vars are set in the daemon's environment (not just your shell — systemd services have their own env).
+1. **Is push enabled?** Check `~/.config/aimont/token` exists, or the env vars are set in the daemon's environment (not just your shell — systemd services have their own env).
 2. **Is the upstream reachable?** `curl -I https://recall.yourteam.com/` should return 200 (or 403 if Access is enabled; that's fine too).
 3. **Is the token valid?** On the upstream, check journal for `401` entries around the time the daemon started.
 4. **Is `/ingest` actually enabled?** Upstream returns `403` on `/ingest` if `CLAUDE_RECALL_INGEST_ENABLED` is unset. Curl it with a bogus Bearer to see:
@@ -344,10 +344,10 @@ You need to restart the daemon after `join` — `join` only writes the file. The
 
 ```bash
 # If running as a user process:
-pkill -f 'claude-recall daemon' && uv run claude-recall daemon &
+pkill -f 'aimont daemon' && uv run aimont daemon &
 
 # If running under systemd:
-sudo systemctl restart claude-recall
+sudo systemctl restart aimont
 ```
 
 ---
@@ -355,7 +355,7 @@ sudo systemctl restart claude-recall
 ## FAQ
 
 **Q. Is there a hosted/managed upstream?**
-No. Claude-Recall is intentionally self-host-only for now.
+No. Aimont is intentionally self-host-only for now.
 
 **Q. Can I use my existing OIDC / SAML IdP?**
 For the browser dashboard: yes, via Cloudflare Access (it supports Okta, Azure AD, Google Workspace, etc.). For daemon-to-daemon auth, no — Bearer tokens only, until the signed-JWT PR lands.

@@ -1,8 +1,8 @@
-# Claude Recall Protocol
+# Aimont Protocol
 
 ## Overview
 
-Claude Recall broadcasts **state frames** to all connected consumers whenever Claude Code's state changes. It supports multiple concurrent sessions and provides both per-session and aggregated state views.
+Aimont broadcasts **state frames** to all connected consumers whenever Claude Code's state changes. It supports multiple concurrent sessions and provides both per-session and aggregated state views.
 
 Consumers (lights, apps, widgets) connect via WebSocket or receive frames through push transports (serial, MQTT, HTTP webhook).
 
@@ -388,16 +388,16 @@ Decoded, it carries:
 Employees run:
 
 ```bash
-claude-recall join <token>
+aimont join <token>
 ```
 
-The token is decoded, validated, and written to `~/.config/claude-recall/token` with `0600` permissions. On daemon restart, the push transport activates automatically.
+The token is decoded, validated, and written to `~/.config/aimont/token` with `0600` permissions. On daemon restart, the push transport activates automatically.
 
 To disconnect:
 
 ```bash
-claude-recall leave        # prompts for confirmation
-claude-recall leave --yes  # scripted
+aimont leave        # prompts for confirmation
+aimont leave --yes  # scripted
 ```
 
 ### Issuing tokens
@@ -405,7 +405,7 @@ claude-recall leave --yes  # scripted
 IT/admins generate tokens with:
 
 ```bash
-claude-recall issue \
+aimont issue \
   --upstream wss://recall.company.com/ingest \
   --secret   "$(openssl rand -hex 16)" \
   --display-name "Default Display" \
@@ -420,7 +420,7 @@ When the daemon starts, it resolves push credentials in this order — higher wi
 
 1. `CLAUDE_RECALL_UPSTREAM_URL` env var (`CLAUDE_RECALL_TOKEN` is used as plain Bearer).
 2. `CLAUDE_RECALL_TOKEN` env var containing an encoded RecallToken.
-3. `~/.config/claude-recall/token` file written by `claude-recall join`.
+3. `~/.config/aimont/token` file written by `aimont join`.
 4. Explicit `transports.push` block in `config.yaml`.
 
 This lets power users override a centrally-provisioned token without deleting it.
