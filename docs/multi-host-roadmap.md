@@ -1,6 +1,6 @@
 # Multi-Host 协议演进路线图
 
-本文档规划 Claude-Recall 从"单机协议"演进到"可级联多 daemon 协议"的完整路径，分 4 个 PR 落地。
+本文档规划 Aimont 从"单机协议"演进到"可级联多 daemon 协议"的完整路径，分 4 个 PR 落地。
 
 ## 设计决策对齐
 
@@ -114,7 +114,7 @@
 - 所有现有测试通过（向后兼容）
 - 新帧 JSON 序列化里能看到 `host` / `forwarded_by` / `message_id`
 - 老版本 receiver 能忽略新字段继续工作
-- `uv run claude-recall status` 输出不变
+- `uv run aimont status` 输出不变
 
 ### 代码量估计
 
@@ -294,7 +294,7 @@
 ### 不在本 PR 范围
 
 - Token 里携带 upstream URL 的高级形态（PR 4）
-- CLI `claude-recall join` 命令（PR 4）
+- CLI `aimont join` 命令（PR 4）
 - JWT 签名验证（未来 PR 5）
 
 ---
@@ -340,22 +340,22 @@
   ```
 
 **CLI 命令 (`core/src/claude_recall/cli.py`)：**
-- 新增 `claude-recall join <token>`：
+- 新增 `aimont join <token>`：
   1. 解析 token 合法性
   2. 尝试连接 upstream（测试握手）
-  3. 写入 `~/.config/claude-recall/token` 文件
+  3. 写入 `~/.config/aimont/token` 文件
   4. 显示：连接目标、身份、过期时间（如果有）
-- 新增 `claude-recall leave`：
+- 新增 `aimont leave`：
   1. 删除 token 文件
   2. 确认后生效（下次重启 daemon）
-- 新增 `claude-recall issue --upstream <url> --secret <xxx>`（管理员用）：
+- 新增 `aimont issue --upstream <url> --secret <xxx>`（管理员用）：
   1. 生成一个 token 字符串打印出来
   2. 便于 IT 签发
 
 **集成：**
 - daemon 读 token 的优先级：
   1. `CLAUDE_RECALL_TOKEN` 环境变量
-  2. `~/.config/claude-recall/token` 文件
+  2. `~/.config/aimont/token` 文件
   3. `config.yaml` 里 `transports.push` 的显式配置（老方式）
 
 **测试：**
@@ -393,8 +393,8 @@
 
 ### 验收标准
 
-- `claude-recall issue` → 生成 token
-- `claude-recall join <token>` → daemon 自动配置并 push
+- `aimont issue` → 生成 token
+- `aimont join <token>` → daemon 自动配置并 push
 - 文档包含一个"30 分钟从零部署公司看板"的 walkthrough
 - Token 换了之后 daemon 能优雅重新连接
 
@@ -407,7 +407,7 @@
 - JWT 签名验证（未来 PR 5）
 - Token 过期与续期（未来 PR 5）
 - Scope 权限粒度（未来 PR 5）
-- `.well-known/claude-recall-config.json` discovery（未来 PR 6）
+- `.well-known/aimont-config.json` discovery（未来 PR 6）
 
 ---
 
@@ -424,7 +424,7 @@
 ### PR 6：Discovery Endpoint
 
 参考 OIDC：
-- `/.well-known/claude-recall-config.json`
+- `/.well-known/aimont-config.json`
 - 员工只需要知道公司域名
 - daemon 自动拉取完整配置
 - SSO 集成
@@ -474,7 +474,7 @@
 
 ### Q9. 配置发现 = B（token 里带 upstream URL）
 - 一个字符串即完整配置
-- 员工只需 `claude-recall join <token>`
+- 员工只需 `aimont join <token>`
 - 无需配置文件
 
 ### Q10. 文档 = B（新建 multi-host.md）
@@ -503,7 +503,7 @@ PR 1-4 全部完成。Multi-host 协议的 MVP 到此收官：协议骨架、Pus
 后续可选工作（都不阻塞当前能力）：
 
 - **PR 5：JWT 升级** — 把 token 从 base64 JSON 升级为签名 JWT（`decode_token(verify_key=...)` 已预留接口）。
-- **PR 6：Discovery endpoint** — 员工只需知道公司域名，daemon 自动从 `.well-known/claude-recall-config.json` 拉完整配置。
+- **PR 6：Discovery endpoint** — 员工只需知道公司域名，daemon 自动从 `.well-known/aimont-config.json` 拉完整配置。
 - **Prometheus metrics** — daemon 当前无内置指标；用 `/state` 轮询凑合。
 
 实际推进以用户反馈和运维痛点驱动，不再走瀑布节奏。

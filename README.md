@@ -1,8 +1,8 @@
-# Claude Recall
+# Aimont
 
 > **把人带回 Claude Code 的工作回路中。**
 
-Claude Recall 是一个 **状态广播中间层**：它追踪你所有 Claude Code session 的实时状态，然后通过开放协议广播出去 — 任何指示器都能接入。
+Aimont 是一个 **状态广播中间层**：它追踪你所有 Claude Code session 的实时状态，然后通过开放协议广播出去 — 任何指示器都能接入。
 
 **你可以用任何方式感知 Claude 的状态：**
 
@@ -43,7 +43,7 @@ npm install && npx vite
 ![Terminal Watch](./docs/assets/terminal-watch.png)
 
 ```bash
-uv run claude-recall watch --mode all
+uv run aimont watch --mode all
 ```
 
 ### 终端 Bell + 窗口标题
@@ -79,15 +79,15 @@ asyncio.run(main())
 
 ```bash
 # 1. 克隆
-git clone https://github.com/yourname/Claude-Recall.git
-cd Claude-Recall
+git clone https://github.com/drinktoomuchsax/Aimont.git
+cd Aimont
 
 # 2. 安装
 uv sync
 
 # 3. 配置 Claude Code hooks（全局生效）
-mkdir -p ~/.claude-recall/hooks
-cp hooks/emit.py ~/.claude-recall/hooks/emit.py
+mkdir -p ~/.aimont/hooks
+cp hooks/emit.py ~/.aimont/hooks/emit.py
 ```
 
 把以下内容合并到 `~/.claude/settings.json`：
@@ -95,14 +95,14 @@ cp hooks/emit.py ~/.claude-recall/hooks/emit.py
 ```json
 {
   "hooks": {
-    "SessionStart": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
-    "SessionEnd": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
-    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
-    "Stop": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
-    "StopFailure": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
-    "Notification": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
-    "PreToolUse": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
-    "PostToolUse": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}]
+    "SessionStart": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}],
+    "StopFailure": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}],
+    "Notification": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}],
+    "PreToolUse": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}],
+    "PostToolUse": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}]
   }
 }
 ```
@@ -113,7 +113,7 @@ cp hooks/emit.py ~/.claude-recall/hooks/emit.py
 
 ## 多机聚合（团队/公司看板）
 
-想把整个团队或公司的 Claude Code 状态聚合到一个看板？Claude-Recall 天生支持级联拓扑——每个 daemon 既能服务本地 viewer，也能把状态 push 到上游。员工只需一条 `claude-recall join <token>` 即可加入。
+想把整个团队或公司的 Claude Code 状态聚合到一个看板？Aimont 天生支持级联拓扑——每个 daemon 既能服务本地 viewer，也能把状态 push 到上游。员工只需一条 `aimont join <token>` 即可加入。
 
 - **部署指南**：[docs/multi-host.md](docs/multi-host.md) — 架构图、Cloudflare Tunnel 步骤、三种规模方案（个人/团队/公司）、SSO 集成、故障排查。
 - **协议细节**：[docs/protocol.md](docs/protocol.md) — 帧格式、`/ingest` 端点、防环机制、token 规范。
@@ -166,11 +166,11 @@ docs/
 ## CLI 命令
 
 ```bash
-claude-recall daemon              # 启动 daemon（hook 会自动拉起，通常不需要手动）
-claude-recall status              # 查看聚合状态
-claude-recall sessions            # 列出所有活跃 session
-claude-recall watch [--mode all]  # 实时监控
-claude-recall test <state> [-s id] # 测试状态转换
+aimont daemon              # 启动 daemon（hook 会自动拉起，通常不需要手动）
+aimont status              # 查看聚合状态
+aimont sessions            # 列出所有活跃 session
+aimont watch [--mode all]  # 实时监控
+aimont test <state> [-s id] # 测试状态转换
 ```
 
 ## License

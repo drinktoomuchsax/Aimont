@@ -1,8 +1,8 @@
-# Claude Recall
+# Aimont
 
 > **Bring humans back into the Claude Code loop.**
 
-Claude Recall is a **state broadcast middleware**: it tracks the real-time state of all your Claude Code sessions and broadcasts via an open protocol — any indicator can plug in.
+Aimont is a **state broadcast middleware**: it tracks the real-time state of all your Claude Code sessions and broadcasts via an open protocol — any indicator can plug in.
 
 **Sense Claude's state however you want:**
 
@@ -43,7 +43,7 @@ npm install && npx vite
 ![Terminal Watch](./docs/assets/terminal-watch.png)
 
 ```bash
-uv run claude-recall watch --mode all
+uv run aimont watch --mode all
 ```
 
 ### Terminal Bell + Window Title
@@ -79,15 +79,15 @@ See [docs/protocol.md](docs/protocol.md) for the full spec.
 
 ```bash
 # 1. Clone
-git clone https://github.com/yourname/Claude-Recall.git
-cd Claude-Recall
+git clone https://github.com/drinktoomuchsax/Aimont.git
+cd Aimont
 
 # 2. Install
 uv sync
 
 # 3. Configure Claude Code hooks (global, applies to all projects)
-mkdir -p ~/.claude-recall/hooks
-cp hooks/emit.py ~/.claude-recall/hooks/emit.py
+mkdir -p ~/.aimont/hooks
+cp hooks/emit.py ~/.aimont/hooks/emit.py
 ```
 
 Merge this into your `~/.claude/settings.json`:
@@ -95,14 +95,14 @@ Merge this into your `~/.claude/settings.json`:
 ```json
 {
   "hooks": {
-    "SessionStart": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
-    "SessionEnd": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
-    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
-    "Stop": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
-    "StopFailure": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
-    "Notification": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
-    "PreToolUse": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}],
-    "PostToolUse": [{"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}]
+    "SessionStart": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}],
+    "StopFailure": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}],
+    "Notification": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}],
+    "PreToolUse": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}],
+    "PostToolUse": [{"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}]
   }
 }
 ```
@@ -156,11 +156,11 @@ docs/
 ## CLI Commands
 
 ```bash
-claude-recall daemon              # Start daemon (hooks auto-start it, rarely needed manually)
-claude-recall status              # Show aggregate state
-claude-recall sessions            # List active sessions
-claude-recall watch [--mode all]  # Real-time monitoring
-claude-recall test <state> [-s id] # Test state transitions
+aimont daemon              # Start daemon (hooks auto-start it, rarely needed manually)
+aimont status              # Show aggregate state
+aimont sessions            # List active sessions
+aimont watch [--mode all]  # Real-time monitoring
+aimont test <state> [-s id] # Test state transitions
 ```
 
 ## License
