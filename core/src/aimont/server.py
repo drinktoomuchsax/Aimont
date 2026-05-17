@@ -18,6 +18,7 @@ from aimont.message_cache import MessageIdCache
 from aimont.models import (
     DEFAULT_AGENT_KIND,
     AggregateFrame,
+    EventPayload,
     HookEvent,
     HostIdentity,
     PresenceFrame,
@@ -34,7 +35,9 @@ from aimont.transports.websocket import WebSocketTransport
 logger = logging.getLogger(__name__)
 
 
-class EventPayload(BaseModel):
+class EventPayloadLegacy(BaseModel):
+    """Accept legacy payloads (no version field, loose types) for backward compat."""
+
     event: str
     session_id: str | None = None
     agent_kind: str | None = None
@@ -106,24 +109,23 @@ class App:
             await t.stop()
 
     async def handle_event(self, payload: EventPayload) -> dict:
-        try:
-            hook_event = HookEvent(payload.event)
-        except ValueError:
-            return {"status": "unknown_event"}
-
-        result = self.rules.resolve(hook_event)
+        result = self.rules.resolve(payload.event)
         if result is None:
             return {"status": "debounced"}
 
-        session_id = payload.session_id or self._default_session_id()
-        agent_kind = payload.agent_kind or DEFAULT_AGENT_KIND
+        session_id = payload.session_id
+        agent_kind = payload.agent_kind
+
+        metadata_dict: dict[str, Any] | None = None
+        if payload.metadata:
+            metadata_dict = payload.metadata.model_dump(exclude_none=True) or None
 
         session_frame, aggregate_frame = await self.registry.handle_transition(
             session_id,
             result.state,
-            hook_event,
+            payload.event,
             force=result.force,
-            metadata=payload.metadata,
+            metadata=metadata_dict,
             agent_kind=agent_kind,
         )
 
@@ -136,6 +138,37 @@ class App:
             return {"status": "no_change"}
 
         return {"status": "ok", "state": result.state.name.lower(), "session_id": session_id}
+
+    def _normalize_legacy(self, data: dict[str, Any]) -> EventPayload | None:
+        """Convert a legacy (unversioned) payload to the standard EventPayload.
+
+        Returns None if the event is unrecognized.
+        """
+        event_str = data.get("event", "")
+        try:
+            hook_event = HookEvent(event_str)
+        except ValueError:
+            return None
+
+        from aimont.models import SessionMetadata
+
+        metadata = None
+        raw_meta = data.get("metadata")
+        if isinstance(raw_meta, dict):
+            metadata = SessionMetadata.model_validate(raw_meta)
+
+        tool_name = data.get("tool_name")
+        if tool_name and metadata is None:
+            metadata = SessionMetadata(tool_name=tool_name)
+        elif tool_name and metadata is not None and metadata.tool_name is None:
+            metadata.tool_name = tool_name
+
+        return EventPayload(
+            event=hook_event,
+            session_id=data.get("session_id") or self._default_session_id(),
+            agent_kind=data.get("agent_kind") or DEFAULT_AGENT_KIND,
+            metadata=metadata,
+        )
 
     async def _broadcast_session_frame(self, frame: StateFrame) -> None:
         for transport in self.transports:
@@ -251,8 +284,17 @@ def create_api(app_obj: App | None = None) -> FastAPI:
     fastapi_app = FastAPI(title="Aimont", lifespan=lifespan)
 
     @fastapi_app.post("/events")
-    async def post_event(payload: EventPayload):
+    async def post_event(request_body: dict[str, Any]):
         app = get_app_instance(fastapi_app)
+        if "version" in request_body:
+            try:
+                payload = EventPayload.model_validate(request_body)
+            except ValidationError:
+                return {"status": "invalid_payload"}
+        else:
+            payload = app._normalize_legacy(request_body)
+            if payload is None:
+                return {"status": "unknown_event"}
         return await app.handle_event(payload)
 
     @fastapi_app.get("/state")

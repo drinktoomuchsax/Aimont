@@ -172,6 +172,7 @@ def test_post_payload_tags_agent_kind_codex():
         codex_probe._post("http://x/events", "SessionStart", "sid-1")
 
     assert captured["body"] == {
+        "version": 1,
         "event": "SessionStart",
         "session_id": "sid-1",
         "agent_kind": "codex",
