@@ -65,6 +65,22 @@ class StateDurations(BaseModel):
 
 DEFAULT_AGENT_KIND = "claude"
 
+EVENT_PAYLOAD_VERSION = 1
+
+
+class EventPayload(BaseModel):
+    """Standardized input schema for all agent event sources.
+
+    version: schema version for forward compatibility. Receivers should
+    accept payloads with version <= their supported max.
+    """
+
+    version: int = EVENT_PAYLOAD_VERSION
+    event: HookEvent
+    session_id: str
+    agent_kind: str = DEFAULT_AGENT_KIND
+    metadata: "SessionMetadata | None" = None
+
 # Bump on breaking frame shape changes. Receivers should reject unknown majors.
 # v2 adds HostIdentity, forwarded_by, message_id, and PresenceFrame.
 FRAME_SCHEMA_VERSION = 2

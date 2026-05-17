@@ -76,6 +76,7 @@ def _session_id(p: psutil.Process) -> str:
 
 def _post(daemon_url: str, event: str, session_id: str, timeout: float = 0.5) -> None:
     body = json.dumps({
+        "version": 1,
         "event": event,
         "session_id": session_id,
         "agent_kind": "codex",

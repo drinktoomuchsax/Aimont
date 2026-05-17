@@ -27,7 +27,7 @@ import urllib.request
 DAEMON_URL = "http://127.0.0.1:8765/events"
 HEALTH_URL = "http://127.0.0.1:8765/state"
 TIMEOUT_SEC = 0.5
-PIDFILE = os.path.expanduser("~/.claude-recall/daemon.pid")
+PIDFILE = os.path.expanduser("~/.aimont/daemon.pid")
 
 PROMPT_MAX_LEN = 100
 TOOL_CONTEXT_MAX_LEN = 200
@@ -95,14 +95,15 @@ def _daemon_alive() -> bool:
 def _start_daemon():
     os.makedirs(os.path.dirname(PIDFILE), exist_ok=True)
 
-    claude_recall = os.path.expanduser("~/Claude-Recall/.venv/bin/claude-recall")
-    if not os.path.exists(claude_recall):
+    aimont_bin = os.path.expanduser("~/.local/bin/aimont")
+    if os.path.exists(aimont_bin):
+        cmd = [aimont_bin, "daemon"]
+    else:
         uv = os.path.expanduser("~/.local/bin/uv")
         if not os.path.exists(uv):
             uv = "uv"
-        cmd = [uv, "run", "--project", os.path.expanduser("~/Claude-Recall"), "claude-recall", "daemon"]
-    else:
-        cmd = [claude_recall, "daemon"]
+        project_dir = os.environ.get("AIMONT_PROJECT", os.path.expanduser("~/Aimont"))
+        cmd = [uv, "run", "--project", project_dir, "aimont", "daemon"]
 
     proc = subprocess.Popen(
         cmd,
@@ -151,11 +152,11 @@ def main():
         metadata = _extract_metadata(payload, event_name)
 
         body = json.dumps({
+            "version": 1,
             "event": event_name,
             "session_id": session_id,
             "agent_kind": agent_kind,
             "metadata": metadata,
-            "raw": payload,
         }).encode()
 
         req = urllib.request.Request(
