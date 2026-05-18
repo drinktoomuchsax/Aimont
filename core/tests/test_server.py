@@ -78,8 +78,8 @@ async def test_get_nonexistent_session(client):
 @pytest.mark.asyncio
 async def test_unknown_event(client):
     r = await client.post("/events", json={"event": "FakeEvent", "session_id": "s1"})
-    data = r.json()
-    assert data["status"] == "unknown_event"
+    assert r.status_code == 400
+    assert r.json()["detail"] == "unknown_event"
 
 
 @pytest.mark.asyncio
