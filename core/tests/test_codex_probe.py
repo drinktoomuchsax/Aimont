@@ -13,6 +13,7 @@ import pytest
 
 from aimont import codex_probe
 from aimont.codex_probe import CodexProbe
+from aimont.models import EVENT_PAYLOAD_VERSION
 
 
 class FakeProc:
@@ -172,7 +173,7 @@ def test_post_payload_tags_agent_kind_codex():
         codex_probe._post("http://x/events", "SessionStart", "sid-1")
 
     assert captured["body"] == {
-        "version": 1,
+        "version": EVENT_PAYLOAD_VERSION,
         "event": "SessionStart",
         "session_id": "sid-1",
         "agent_kind": "codex",
