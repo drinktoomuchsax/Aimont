@@ -10,13 +10,14 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
 
 from aimont.config import AimontConfig, load_config
 from aimont.message_cache import MessageIdCache
 from aimont.models import (
     DEFAULT_AGENT_KIND,
+    EVENT_PAYLOAD_VERSION,
     AggregateFrame,
     EventPayload,
     HookEvent,
@@ -286,15 +287,17 @@ def create_api(app_obj: App | None = None) -> FastAPI:
     @fastapi_app.post("/events")
     async def post_event(request_body: dict[str, Any]):
         app = get_app_instance(fastapi_app)
-        if "version" in request_body:
-            try:
+        try:
+            if "version" in request_body:
                 payload = EventPayload.model_validate(request_body)
-            except ValidationError:
-                return {"status": "invalid_payload"}
-        else:
-            payload = app._normalize_legacy(request_body)
-            if payload is None:
-                return {"status": "unknown_event"}
+                if payload.version > EVENT_PAYLOAD_VERSION:
+                    raise HTTPException(status_code=422, detail="unsupported_payload_version")
+            else:
+                payload = app._normalize_legacy(request_body)
+                if payload is None:
+                    raise HTTPException(status_code=400, detail="unknown_event")
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail="invalid_payload") from exc
         return await app.handle_event(payload)
 
     @fastapi_app.get("/state")
