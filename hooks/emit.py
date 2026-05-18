@@ -102,7 +102,9 @@ def _start_daemon():
         uv = os.path.expanduser("~/.local/bin/uv")
         if not os.path.exists(uv):
             uv = "uv"
-        project_dir = os.environ.get("AIMONT_PROJECT", os.path.expanduser("~/Aimont"))
+        project_dir = os.environ.get("AIMONT_PROJECT")
+        if not project_dir:
+            project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         cmd = [uv, "run", "--project", project_dir, "aimont", "daemon"]
 
     proc = subprocess.Popen(
