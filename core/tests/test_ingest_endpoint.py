@@ -161,6 +161,30 @@ async def test_ingest_accepts_correct_token_and_hello():
             assert not ws.close_code
 
 
+async def test_ingest_accepts_any_token_in_multi_token_allowlist():
+    """A second (non-first) token in the allowlist must be accepted.
+
+    Guards the constant-time authorize loop, which OR-matches across the
+    whole allowlist rather than checking only the first entry.
+    """
+    cfg = _default_config(ingest_enabled=True, allowed_tokens=["first", "second"])
+    async with _running_daemon(cfg) as (_, base):
+        async with websockets.connect(
+            f"{base}/ingest",
+            additional_headers={"Authorization": "Bearer second"},
+        ) as ws:
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": "hello",
+                        "host": {"host_id": "downstream"},
+                    }
+                )
+            )
+            await asyncio.sleep(0.05)
+            assert not ws.close_code
+
+
 async def test_ingest_no_token_required_when_allowlist_empty():
     cfg = _default_config(ingest_enabled=True, allowed_tokens=[])
     async with _running_daemon(cfg) as (_, base):
