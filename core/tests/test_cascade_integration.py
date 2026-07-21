@@ -10,13 +10,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import socket
 from datetime import datetime, timezone
 from typing import AsyncIterator
 
 import pytest
 import uvicorn
 import websockets
+
+from tests.helpers import free_port
 
 from aimont.config import (
     HostConfig,
@@ -27,12 +28,6 @@ from aimont.config import (
 )
 from aimont.models import HostIdentity, AimontState, StateFrame
 from aimont.server import App, create_api
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 @contextlib.asynccontextmanager
@@ -47,7 +42,7 @@ async def _spawn_daemon(
     Each daemon gets its own FastAPI instance via create_api() so multiple
     daemons can coexist in-process without trampling on each other.
     """
-    port = _free_port()
+    port = free_port()
     transports: dict[str, TransportConfig] = {
         "websocket": TransportConfig(type="websocket", enabled=True),
     }

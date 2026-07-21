@@ -10,13 +10,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import socket
 from datetime import datetime, timezone
 from typing import AsyncIterator
 
 import pytest
 import uvicorn
 import websockets
+
+from tests.helpers import free_port
 
 from aimont.config import (
     HostConfig,
@@ -33,12 +34,6 @@ from aimont.models import (
 from aimont.server import App, create_api
 
 
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 @contextlib.asynccontextmanager
 async def _running_daemon(config: AimontConfig) -> AsyncIterator[tuple[App, str]]:
     """Start a live daemon with the given config; yield (app, ws_base_url).
@@ -46,7 +41,7 @@ async def _running_daemon(config: AimontConfig) -> AsyncIterator[tuple[App, str]
     We build the App manually and hand it to a dedicated FastAPI instance
     so multiple daemons can coexist without clobbering shared state.
     """
-    port = _free_port()
+    port = free_port()
     app_obj = App(config)
     await app_obj.start()
 
