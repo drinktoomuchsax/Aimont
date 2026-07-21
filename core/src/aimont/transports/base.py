@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from aimont.models import AggregateFrame, StateFrame
+from aimont.models import AggregateFrame, PresenceFrame, StateFrame
 
 
 class BaseTransport(ABC):
@@ -24,8 +24,13 @@ class BaseTransport(ABC):
         ...
 
     @abstractmethod
-    async def send(self, frame: StateFrame) -> None:
-        """Push a per-session state frame through this transport."""
+    async def send(self, frame: StateFrame | PresenceFrame) -> None:
+        """Push a per-session state or host-presence frame through this transport.
+
+        Presence frames ride the same path so dashboards can reflect host
+        online/offline status; transports that only care about session state
+        (e.g. terminal) may ignore them.
+        """
         ...
 
     async def send_aggregate(self, frame: AggregateFrame) -> None:

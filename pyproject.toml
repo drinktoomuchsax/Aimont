@@ -11,6 +11,7 @@ dev = [
     "pytest-asyncio>=0.23",
     "httpx>=0.27.0",
     "ruff>=0.4.0",
+    "mypy>=1.10",
 ]
 
 [tool.uv.sources]
@@ -18,6 +19,12 @@ aimont = { workspace = true }
 
 [tool.uv.workspace]
 members = ["core"]
+
+[tool.mypy]
+# Type-check the library source. Tests are excluded for now — they lean on
+# dynamic fixtures and would need broader annotation before passing cleanly.
+files = ["core/src/aimont"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

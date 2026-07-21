@@ -285,6 +285,7 @@ def create_api(app_obj: App | None = None) -> FastAPI:
     async def post_event(request_body: dict[str, Any]):
         app = get_app_instance(fastapi_app)
         try:
+            payload: EventPayload | None
             if "version" in request_body:
                 payload = EventPayload.model_validate(request_body)
                 if payload.version > EVENT_PAYLOAD_VERSION:

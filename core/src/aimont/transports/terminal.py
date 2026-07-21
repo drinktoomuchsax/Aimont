@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from typing import Any
 
-from aimont.models import AggregateFrame, AimontState, StateFrame
+from aimont.models import AggregateFrame, AimontState, PresenceFrame, StateFrame
 from aimont.transports import register_transport
 from aimont.transports.base import BaseTransport
 
@@ -42,7 +42,9 @@ class TerminalTransport(BaseTransport):
         if self._title_enabled:
             self._set_title("")
 
-    async def send(self, frame: StateFrame) -> None:
+    async def send(self, frame: StateFrame | PresenceFrame) -> None:
+        # Terminal only reflects aggregate state in the title/bell; per-session
+        # and presence frames are no-ops here.
         pass
 
     async def send_aggregate(self, frame: AggregateFrame) -> None:
