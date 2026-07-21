@@ -172,15 +172,17 @@ class App:
         for transport in self.transports:
             try:
                 await transport.send(frame)
-            except Exception:
-                pass
+            except Exception as e:
+                # One transport failing must not block the others; log at
+                # debug so the failure is diagnosable rather than silent.
+                logger.debug("transport %s failed to send session frame: %s", transport.name, e)
 
     async def _broadcast_aggregate_frame(self, frame: AggregateFrame) -> None:
         for transport in self.transports:
             try:
                 await transport.send_aggregate(frame)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("transport %s failed to send aggregate frame: %s", transport.name, e)
 
     async def _broadcast_presence_frame(self, frame: PresenceFrame) -> None:
         """Broadcast a presence frame to local viewers and (if configured) upstream.
@@ -196,8 +198,8 @@ class App:
                 # mode=session will get the frame; aggregate-only subscribers
                 # will not — which is what we want for presence traffic.
                 await transport.send(frame)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("transport %s failed to send presence frame: %s", transport.name, e)
 
     async def ingest_relay_frame(self, frame: StateFrame | AggregateFrame | PresenceFrame) -> bool:
         """Dispatch a frame received from /ingest.
