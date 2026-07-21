@@ -178,9 +178,10 @@ class CodexProbe:
 
         # 3. Busy / quiet transitions for still-alive processes
         for pid, proc in found.items():
-            tp = self._tracked.get(pid)
-            if tp is None:
+            tracked = self._tracked.get(pid)
+            if tracked is None:
                 continue
+            tp = tracked
             if not tp.cpu_primed:
                 # First tick after discovery — nothing to compare against yet.
                 tp.cpu_primed = True
