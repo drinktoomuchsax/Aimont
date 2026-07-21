@@ -153,13 +153,15 @@ def main():
 
         metadata = _extract_metadata(payload, event_name)
 
-        body = json.dumps({
-            "version": 1,
-            "event": event_name,
-            "session_id": session_id,
-            "agent_kind": agent_kind,
-            "metadata": metadata,
-        }).encode()
+        body = json.dumps(
+            {
+                "version": 1,
+                "event": event_name,
+                "session_id": session_id,
+                "agent_kind": agent_kind,
+                "metadata": metadata,
+            }
+        ).encode()
 
         req = urllib.request.Request(
             DAEMON_URL,
@@ -173,6 +175,7 @@ def main():
         except (urllib.error.URLError, ConnectionRefusedError, OSError):
             _start_daemon()
             import time
+
             time.sleep(0.3)
             try:
                 urllib.request.urlopen(req, timeout=TIMEOUT_SEC)

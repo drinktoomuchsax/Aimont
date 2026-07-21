@@ -237,6 +237,7 @@ async def test_aggregate_frame_is_relayed(fake_upstream):
 async def test_reconnects_after_server_drops(monkeypatch):
     """Client should reconnect after losing its upstream connection."""
     import aimont.transports.push as push_mod
+
     monkeypatch.setattr(push_mod, "_MIN_BACKOFF_SEC", 0.05)
     monkeypatch.setattr(push_mod, "_MAX_BACKOFF_SEC", 0.05)
 

@@ -137,10 +137,14 @@ DEFAULT_TRANSPORTS: dict[str, dict[str, Any]] = {
 
 
 def load_config(path: Path | None = None) -> AimontConfig:
-    candidates = [path] if path else [
-        Path.home() / ".config" / "aimont" / "config.yaml",
-        Path.cwd() / ".aimont.yaml",
-    ]
+    candidates = (
+        [path]
+        if path
+        else [
+            Path.home() / ".config" / "aimont" / "config.yaml",
+            Path.cwd() / ".aimont.yaml",
+        ]
+    )
 
     merged: dict[str, Any] = {}
     for p in candidates:
@@ -154,9 +158,7 @@ def load_config(path: Path | None = None) -> AimontConfig:
         # Copy to avoid mutating the module-level default when env overrides apply.
         merged["rules"] = [dict(r) for r in DEFAULT_RULES]
     if "transports" not in merged:
-        merged["transports"] = {
-            name: dict(opts) for name, opts in DEFAULT_TRANSPORTS.items()
-        }
+        merged["transports"] = {name: dict(opts) for name, opts in DEFAULT_TRANSPORTS.items()}
 
     _apply_push_env_overrides(merged)
     _apply_ingest_env_overrides(merged)

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 
 from aimont.message_cache import MessageIdCache
 
@@ -60,8 +59,8 @@ async def test_refresh_on_duplicate_hit():
     await cache.add("a")
     # Push 'b' out by adding 'd'.
     await cache.add("d")
-    assert await cache.contains("a") is True     # refreshed, safe
-    assert await cache.contains("b") is False    # evicted
+    assert await cache.contains("a") is True  # refreshed, safe
+    assert await cache.contains("b") is False  # evicted
     assert await cache.contains("c") is True
     assert await cache.contains("d") is True
 

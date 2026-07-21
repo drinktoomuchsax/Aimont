@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import WebSocket
@@ -75,7 +75,9 @@ class WebSocketTransport(BaseTransport):
             for sub in dead:
                 self._subscribers.remove(sub)
 
-    async def connect(self, ws: WebSocket, mode: str = "aggregate", session_filter: str | None = None) -> None:
+    async def connect(
+        self, ws: WebSocket, mode: str = "aggregate", session_filter: str | None = None
+    ) -> None:
         await ws.accept()
         sub = Subscriber(ws=ws, mode=mode, session_filter=session_filter)
         async with self._lock:
@@ -85,9 +87,7 @@ class WebSocketTransport(BaseTransport):
         async with self._lock:
             self._subscribers = [s for s in self._subscribers if s.ws != ws]
 
-    def _wants_session_frame(
-        self, sub: Subscriber, frame: StateFrame | PresenceFrame
-    ) -> bool:
+    def _wants_session_frame(self, sub: Subscriber, frame: StateFrame | PresenceFrame) -> bool:
         if sub.mode == "aggregate":
             return False
         if sub.mode == "all":

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -25,6 +24,7 @@ def token_home(monkeypatch, tmp_path):
     # config.TOKEN_FILE_PATH is evaluated at import time, so we have to
     # reach in and patch it.
     from aimont import config as cfg_mod
+
     patched = fake_home / ".config" / "aimont" / "token"
     monkeypatch.setattr(cfg_mod, "TOKEN_FILE_PATH", patched)
     return patched
@@ -46,15 +46,20 @@ def test_issue_prints_decodable_token(runner):
         app,
         [
             "issue",
-            "--upstream", "wss://aimont.company.com/ingest",
-            "--secret", "top-secret",
-            "--display-name", "Default Display",
-            "--issuer", "Acme",
+            "--upstream",
+            "wss://aimont.company.com/ingest",
+            "--secret",
+            "top-secret",
+            "--display-name",
+            "Default Display",
+            "--issuer",
+            "Acme",
         ],
     )
     assert result.exit_code == 0, result.output
     token = result.output.strip()
     from aimont.auth import decode_token
+
     bundle = decode_token(token)
     assert bundle.upstream_url == "wss://aimont.company.com/ingest"
     assert bundle.auth_secret == "top-secret"

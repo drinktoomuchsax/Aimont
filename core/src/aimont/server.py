@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
@@ -23,14 +22,12 @@ from aimont.models import (
     HookEvent,
     HostIdentity,
     PresenceFrame,
-    AimontState,
     StateFrame,
 )
 from aimont.rules import RuleEngine
 from aimont.session_registry import SessionRegistry
 from aimont.transports import get_transport_class
 from aimont.transports.base import BaseTransport
-from aimont.transports.push import PushTransport
 from aimont.transports.websocket import WebSocketTransport
 
 logger = logging.getLogger(__name__)
@@ -373,7 +370,7 @@ def _authorize_ingest(ws: WebSocket, allowed_tokens: list[str]) -> bool:
     auth = ws.headers.get("authorization", "")
     if not auth.lower().startswith("bearer "):
         return False
-    token = auth[len("Bearer "):].strip()
+    token = auth[len("Bearer ") :].strip()
     return token in allowed_tokens
 
 

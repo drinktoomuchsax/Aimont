@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from aimont.config import StatesConfig, StateTTL
+from aimont.config import StatesConfig
 from aimont.models import HookEvent, AimontState
 from aimont.session_registry import SessionRegistry
 
@@ -147,8 +147,6 @@ async def test_agent_kind_session_end_preserved(registry):
     await registry.handle_transition(
         "c2", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT, agent_kind="codex"
     )
-    frame, _ = await registry.handle_transition(
-        "c2", AimontState.OFF, HookEvent.SESSION_END
-    )
+    frame, _ = await registry.handle_transition("c2", AimontState.OFF, HookEvent.SESSION_END)
     assert frame is not None
     assert frame.agent_kind == "codex"

@@ -73,9 +73,7 @@ class PushTransport(BaseTransport):
             # No upstream configured; transport is inert. Don't log noisily.
             return
         if self._host_identity is None:
-            logger.warning(
-                "PushTransport started without host_identity; disabling"
-            )
+            logger.warning("PushTransport started without host_identity; disabling")
             return
         self._connect_task = asyncio.create_task(self._connect_loop())
 

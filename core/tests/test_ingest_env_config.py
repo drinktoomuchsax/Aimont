@@ -73,12 +73,7 @@ def test_tokens_ignored_when_disabled(monkeypatch):
 def test_env_can_override_yaml_to_disable(monkeypatch, tmp_path):
     """AIMONT_INGEST_ENABLED=0 should turn off a yaml-enabled ingest."""
     cfg_yaml = tmp_path / ".aimont.yaml"
-    cfg_yaml.write_text(
-        "ingest:\n"
-        "  enabled: true\n"
-        "  allowed_tokens:\n"
-        "    - from-yaml\n"
-    )
+    cfg_yaml.write_text("ingest:\n  enabled: true\n  allowed_tokens:\n    - from-yaml\n")
     monkeypatch.setenv("AIMONT_INGEST_ENABLED", "0")
     cfg = load_config()
     assert cfg.ingest.enabled is False

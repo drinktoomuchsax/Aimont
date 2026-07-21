@@ -81,6 +81,7 @@ class EventPayload(BaseModel):
     agent_kind: str = DEFAULT_AGENT_KIND
     metadata: "SessionMetadata | None" = None
 
+
 # Bump on breaking frame shape changes. Receivers should reject unknown majors.
 # v2 adds HostIdentity, forwarded_by, message_id, and PresenceFrame.
 FRAME_SCHEMA_VERSION = 2

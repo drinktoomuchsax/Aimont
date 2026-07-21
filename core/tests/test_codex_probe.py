@@ -64,38 +64,42 @@ def _fake_sum_cpu(value: float):
 
 def test_new_process_emits_session_start(probe, captured_posts):
     proc = FakeProc(pid=1111)
-    with patch.object(codex_probe, "_is_codex_cli", return_value=True), \
-         patch.object(codex_probe.psutil, "process_iter", return_value=[proc]):
+    with (
+        patch.object(codex_probe, "_is_codex_cli", return_value=True),
+        patch.object(codex_probe.psutil, "process_iter", return_value=[proc]),
+    ):
         probe.tick()
 
-    assert captured_posts == [
-        {"event": "SessionStart", "session_id": "codex-1111-1000000"}
-    ]
+    assert captured_posts == [{"event": "SessionStart", "session_id": "codex-1111-1000000"}]
     assert 1111 in probe._tracked
 
 
 def test_vanished_process_emits_session_end(probe, captured_posts):
     proc = FakeProc(pid=2222)
-    with patch.object(codex_probe, "_is_codex_cli", return_value=True), \
-         patch.object(codex_probe.psutil, "process_iter", return_value=[proc]):
+    with (
+        patch.object(codex_probe, "_is_codex_cli", return_value=True),
+        patch.object(codex_probe.psutil, "process_iter", return_value=[proc]),
+    ):
         probe.tick()
     captured_posts.clear()
 
     # Process disappears on the next tick.
-    with patch.object(codex_probe, "_is_codex_cli", return_value=True), \
-         patch.object(codex_probe.psutil, "process_iter", return_value=[]):
+    with (
+        patch.object(codex_probe, "_is_codex_cli", return_value=True),
+        patch.object(codex_probe.psutil, "process_iter", return_value=[]),
+    ):
         probe.tick()
 
-    assert captured_posts == [
-        {"event": "SessionEnd", "session_id": "codex-2222-1000000"}
-    ]
+    assert captured_posts == [{"event": "SessionEnd", "session_id": "codex-2222-1000000"}]
     assert 2222 not in probe._tracked
 
 
 def test_busy_cpu_emits_user_prompt_submit(probe, captured_posts):
     proc = FakeProc(pid=3333)
-    with patch.object(codex_probe, "_is_codex_cli", return_value=True), \
-         patch.object(codex_probe.psutil, "process_iter", return_value=[proc]):
+    with (
+        patch.object(codex_probe, "_is_codex_cli", return_value=True),
+        patch.object(codex_probe.psutil, "process_iter", return_value=[proc]),
+    ):
         probe.tick()  # SessionStart + prime
         captured_posts.clear()
 
@@ -107,16 +111,16 @@ def test_busy_cpu_emits_user_prompt_submit(probe, captured_posts):
         with patch.object(codex_probe, "_sum_cpu", _fake_sum_cpu(80.0)):
             probe.tick()
 
-    assert captured_posts == [
-        {"event": "UserPromptSubmit", "session_id": "codex-3333-1000000"}
-    ]
+    assert captured_posts == [{"event": "UserPromptSubmit", "session_id": "codex-3333-1000000"}]
     assert probe._tracked[3333].last_state == "working"
 
 
 def test_idle_emits_stop_after_quiet_window(probe, captured_posts):
     proc = FakeProc(pid=4444)
-    with patch.object(codex_probe, "_is_codex_cli", return_value=True), \
-         patch.object(codex_probe.psutil, "process_iter", return_value=[proc]):
+    with (
+        patch.object(codex_probe, "_is_codex_cli", return_value=True),
+        patch.object(codex_probe.psutil, "process_iter", return_value=[proc]),
+    ):
         probe.tick()  # discover + prime
         probe.tick()  # out of priming
 
@@ -127,20 +131,21 @@ def test_idle_emits_stop_after_quiet_window(probe, captured_posts):
 
         # Wait past idle_after_sec, then see quiet CPU.
         import time
+
         time.sleep(0.05)
         with patch.object(codex_probe, "_sum_cpu", _fake_sum_cpu(0.1)):
             probe.tick()
 
-    assert captured_posts == [
-        {"event": "Stop", "session_id": "codex-4444-1000000"}
-    ]
+    assert captured_posts == [{"event": "Stop", "session_id": "codex-4444-1000000"}]
     assert probe._tracked[4444].last_state == "awaiting_input"
 
 
 def test_does_not_duplicate_working_event(probe, captured_posts):
     proc = FakeProc(pid=5555)
-    with patch.object(codex_probe, "_is_codex_cli", return_value=True), \
-         patch.object(codex_probe.psutil, "process_iter", return_value=[proc]):
+    with (
+        patch.object(codex_probe, "_is_codex_cli", return_value=True),
+        patch.object(codex_probe.psutil, "process_iter", return_value=[proc]),
+    ):
         probe.tick()
         probe.tick()
         with patch.object(codex_probe, "_sum_cpu", _fake_sum_cpu(50.0)):
