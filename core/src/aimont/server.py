@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -374,7 +375,15 @@ def _authorize_ingest(ws: WebSocket, allowed_tokens: list[str]) -> bool:
     if not auth.lower().startswith("bearer "):
         return False
     token = auth[len("Bearer ") :].strip()
-    return token in allowed_tokens
+    # Constant-time compare against every allowed token. Using `in` (or a
+    # short-circuiting `any`) leaks token contents through response timing;
+    # compare_digest is timing-safe, and we OR all results without early
+    # exit so the number of comparisons doesn't depend on the input either.
+    matched = False
+    for allowed in allowed_tokens:
+        if hmac.compare_digest(token, allowed):
+            matched = True
+    return matched
 
 
 def _parse_ingest_frame(raw: str) -> StateFrame | AggregateFrame | PresenceFrame | None:
