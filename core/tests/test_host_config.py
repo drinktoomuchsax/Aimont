@@ -2,7 +2,6 @@
 
 import socket
 
-import pytest
 
 from aimont.config import HostConfig
 

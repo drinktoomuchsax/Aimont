@@ -19,7 +19,7 @@ import json
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import psutil
 
@@ -28,8 +28,8 @@ from aimont.models import EVENT_PAYLOAD_VERSION
 
 DEFAULT_DAEMON_URL = "http://127.0.0.1:8765/events"
 DEFAULT_POLL_SEC = 2.0
-DEFAULT_BUSY_CPU_THRESHOLD = 10.0   # process-level CPU% that counts as "working"
-DEFAULT_IDLE_AFTER_SEC = 6.0        # seconds of quiet CPU before we emit Stop
+DEFAULT_BUSY_CPU_THRESHOLD = 10.0  # process-level CPU% that counts as "working"
+DEFAULT_IDLE_AFTER_SEC = 6.0  # seconds of quiet CPU before we emit Stop
 
 
 @dataclass
@@ -77,12 +77,14 @@ def _session_id(p: psutil.Process) -> str:
 
 
 def _post(daemon_url: str, event: str, session_id: str, timeout: float = 0.5) -> None:
-    body = json.dumps({
-        "version": EVENT_PAYLOAD_VERSION,
-        "event": event,
-        "session_id": session_id,
-        "agent_kind": "codex",
-    }).encode()
+    body = json.dumps(
+        {
+            "version": EVENT_PAYLOAD_VERSION,
+            "event": event,
+            "session_id": session_id,
+            "agent_kind": "codex",
+        }
+    ).encode()
     req = urllib.request.Request(
         daemon_url,
         data=body,

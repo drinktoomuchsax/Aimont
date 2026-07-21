@@ -30,6 +30,7 @@ def daemon(
     """Start the Aimont daemon."""
     if config:
         import os
+
         os.environ["AIMONT_CONFIG"] = str(config)
 
     uvicorn.run(
@@ -62,7 +63,9 @@ def status(
 @app.command()
 def watch(
     mode: str = typer.Option("aggregate", help="Subscription mode: aggregate, all, session"),
-    session_id: str | None = typer.Option(None, "--session", "-s", help="Session ID (for mode=session)"),
+    session_id: str | None = typer.Option(
+        None, "--session", "-s", help="Session ID (for mode=session)"
+    ),
     port: int = typer.Option(8765, help="Daemon port"),
 ):
     """Watch state changes in real-time."""
@@ -103,6 +106,7 @@ def watch(
             state = frame["state"]
             if isinstance(state, int):
                 from aimont.models import AimontState
+
                 state = AimontState(state).name.lower()
             icon = STATE_ICONS.get(state, "  ")
             sessions = frame.get("active_sessions", 0)
@@ -112,6 +116,7 @@ def watch(
             state = frame.get("state", "")
             if isinstance(state, int):
                 from aimont.models import AimontState
+
                 state = AimontState(state).name.lower()
             icon = STATE_ICONS.get(state, "  ")
             sid = frame.get("session_id", "?")
@@ -119,6 +124,7 @@ def watch(
             prev = frame.get("previous", "")
             if isinstance(prev, int):
                 from aimont.models import AimontState
+
                 prev = AimontState(prev).name.lower()
             typer.echo(f"  {ts}  {icon} [{kind}:{sid}] {prev} → {state}")
 
@@ -166,7 +172,9 @@ def codex_probe(
         busy_threshold=busy_cpu,
         idle_after_sec=idle_after,
     )
-    typer.echo(f"Codex probe running (poll={poll}s, busy_cpu>={busy_cpu}%, idle_after={idle_after}s). Ctrl+C to stop.")
+    typer.echo(
+        f"Codex probe running (poll={poll}s, busy_cpu>={busy_cpu}%, idle_after={idle_after}s). Ctrl+C to stop."
+    )
     try:
         probe.run_forever()
     except KeyboardInterrupt:
@@ -176,7 +184,9 @@ def codex_probe(
 @app.command()
 def join(
     token: str = typer.Argument(help="Encoded AimontToken string"),
-    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing token without prompting"),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Overwrite existing token without prompting"
+    ),
 ):
     """Join an upstream dashboard using a token issued by IT.
 
@@ -238,10 +248,16 @@ def leave(
 
 @app.command()
 def issue(
-    upstream: str = typer.Option(..., "--upstream", help="Upstream URL, e.g. wss://aimont.company.com/ingest"),
+    upstream: str = typer.Option(
+        ..., "--upstream", help="Upstream URL, e.g. wss://aimont.company.com/ingest"
+    ),
     secret: str = typer.Option(..., "--secret", help="Bearer secret the upstream expects"),
-    display_name_hint: str | None = typer.Option(None, "--display-name", help="Optional hint shown on dashboards"),
-    issuer: str | None = typer.Option(None, "--issuer", help="Optional human-readable issuer label"),
+    display_name_hint: str | None = typer.Option(
+        None, "--display-name", help="Optional hint shown on dashboards"
+    ),
+    issuer: str | None = typer.Option(
+        None, "--issuer", help="Optional human-readable issuer label"
+    ),
 ):
     """Issue an encoded AimontToken (IT/admin use).
 

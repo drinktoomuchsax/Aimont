@@ -84,9 +84,7 @@ async def _spawn_daemon(
                 break
             await asyncio.sleep(0.02)
         if not server.started:
-            raise TimeoutError(
-                f"uvicorn test server did not start on port {port} within 2s"
-            )
+            raise TimeoutError(f"uvicorn test server did not start on port {port} within 2s")
         yield app_obj, port
     finally:
         server.should_exit = True
@@ -97,6 +95,7 @@ async def _spawn_daemon(
 async def _wait_for_push_connection(app_obj: App, timeout: float = 3.0) -> None:
     """Wait until an App's push transport (if configured) is connected."""
     from aimont.transports.push import PushTransport
+
     deadline = asyncio.get_event_loop().time() + timeout
     push = next((t for t in app_obj.transports if isinstance(t, PushTransport)), None)
     if push is None:
@@ -128,6 +127,7 @@ async def test_two_level_cascade_relays_state_frame():
                     pass
 
                 from aimont.models import HookEvent
+
                 session_frame, _ = await A.registry.handle_transition(
                     "sess-Z",
                     AimontState.WORKING,
@@ -163,10 +163,14 @@ async def test_loop_prevention_when_frame_already_passed_through_self():
     async with _spawn_daemon("upstream-B", ingest_enabled=True) as (_B, port_b):
         async with websockets.connect(f"ws://127.0.0.1:{port_b}/ws?mode=all") as viewer:
             async with websockets.connect(f"ws://127.0.0.1:{port_b}/ingest") as ingest:
-                await ingest.send(json.dumps({
-                    "type": "hello",
-                    "host": {"host_id": "attacker"},
-                }))
+                await ingest.send(
+                    json.dumps(
+                        {
+                            "type": "hello",
+                            "host": {"host_id": "attacker"},
+                        }
+                    )
+                )
                 await asyncio.wait_for(viewer.recv(), 2.0)  # drain online
 
                 forged = StateFrame(
@@ -213,6 +217,7 @@ async def test_three_level_cascade_accumulates_forwarded_by():
                         pass
 
                     from aimont.models import HookEvent
+
                     session_frame, _ = await A.registry.handle_transition(
                         "trace-me",
                         AimontState.WORKING,
@@ -228,7 +233,10 @@ async def test_three_level_cascade_accumulates_forwarded_by():
                         try:
                             msg = await asyncio.wait_for(viewer.recv(), 0.5)
                             data = json.loads(msg)
-                            if data.get("type") == "session" and data.get("session_id") == "trace-me":
+                            if (
+                                data.get("type") == "session"
+                                and data.get("session_id") == "trace-me"
+                            ):
                                 seen = data
                                 break
                         except asyncio.TimeoutError:

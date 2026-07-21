@@ -83,9 +83,11 @@ def test_decode_non_object_json_raises():
 
 
 def test_decode_missing_required_fields_raises():
-    payload = base64.urlsafe_b64encode(
-        json.dumps({"upstream_url": "wss://x"}).encode()
-    ).rstrip(b"=").decode()
+    payload = (
+        base64.urlsafe_b64encode(json.dumps({"upstream_url": "wss://x"}).encode())
+        .rstrip(b"=")
+        .decode()
+    )
     with pytest.raises(TokenDecodeError):
         decode_token(payload)
 

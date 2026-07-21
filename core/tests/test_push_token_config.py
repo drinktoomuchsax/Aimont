@@ -20,6 +20,7 @@ def _clean_env(monkeypatch, tmp_path):
     # TOKEN_FILE_PATH was evaluated at import time with the *real* $HOME.
     # Patch it so tests can't possibly touch a developer's real token file.
     from aimont import config as cfg_mod
+
     monkeypatch.setattr(
         cfg_mod,
         "TOKEN_FILE_PATH",
@@ -85,9 +86,7 @@ def test_token_file_enables_push(monkeypatch, _clean_env):
 def test_env_token_wins_over_file_token(monkeypatch, _clean_env):
     token_path = _clean_env / ".config" / "aimont" / "token"
     token_path.parent.mkdir(parents=True, exist_ok=True)
-    token_path.write_text(
-        _encoded(upstream="wss://from-file.example", secret="file-secret")
-    )
+    token_path.write_text(_encoded(upstream="wss://from-file.example", secret="file-secret"))
 
     monkeypatch.setenv(
         "AIMONT_TOKEN",

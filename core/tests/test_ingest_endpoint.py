@@ -26,13 +26,10 @@ from aimont.config import (
     TransportConfig,
 )
 from aimont.models import (
-    AggregateFrame,
     HostIdentity,
-    PresenceFrame,
     AimontState,
     StateFrame,
 )
-from aimont.rules import RuleEngine
 from aimont.server import App, create_api
 
 
@@ -72,9 +69,7 @@ async def _running_daemon(config: AimontConfig) -> AsyncIterator[tuple[App, str]
         if not server.started:
             # Surface startup failure immediately rather than letting
             # downstream WebSocket connects fail with confusing errors.
-            raise TimeoutError(
-                f"uvicorn test server did not start on port {port} within 2s"
-            )
+            raise TimeoutError(f"uvicorn test server did not start on port {port} within 2s")
 
         yield app_obj, f"ws://127.0.0.1:{port}"
     finally:
@@ -158,10 +153,14 @@ async def test_ingest_accepts_correct_token_and_hello():
             f"{base}/ingest",
             additional_headers={"Authorization": "Bearer secret"},
         ) as ws:
-            await ws.send(json.dumps({
-                "type": "hello",
-                "host": {"host_id": "downstream", "display_name": "Downstream"},
-            }))
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": "hello",
+                        "host": {"host_id": "downstream", "display_name": "Downstream"},
+                    }
+                )
+            )
             # Connection should remain open after hello.
             await asyncio.sleep(0.05)
             assert not ws.close_code
@@ -171,10 +170,14 @@ async def test_ingest_no_token_required_when_allowlist_empty():
     cfg = _default_config(ingest_enabled=True, allowed_tokens=[])
     async with _running_daemon(cfg) as (_, base):
         async with websockets.connect(f"{base}/ingest") as ws:
-            await ws.send(json.dumps({
-                "type": "hello",
-                "host": {"host_id": "downstream"},
-            }))
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": "hello",
+                        "host": {"host_id": "downstream"},
+                    }
+                )
+            )
             await asyncio.sleep(0.05)
             assert not ws.close_code
 
@@ -185,10 +188,14 @@ async def test_relay_frame_is_broadcast_to_local_viewers():
         # Connect as a viewer in mode=all to receive both frame types.
         async with websockets.connect(f"{base}/ws?mode=all") as viewer:
             async with websockets.connect(f"{base}/ingest") as ingest_ws:
-                await ingest_ws.send(json.dumps({
-                    "type": "hello",
-                    "host": {"host_id": "downstream"},
-                }))
+                await ingest_ws.send(
+                    json.dumps(
+                        {
+                            "type": "hello",
+                            "host": {"host_id": "downstream"},
+                        }
+                    )
+                )
                 # Drain the online presence broadcast (emitted after hello).
                 online = json.loads(await asyncio.wait_for(viewer.recv(), 2.0))
                 assert online["type"] == "presence"
@@ -208,10 +215,14 @@ async def test_split_horizon_drops_frames_that_visited_us():
     async with _running_daemon(cfg) as (_, base):
         async with websockets.connect(f"{base}/ws?mode=all") as viewer:
             async with websockets.connect(f"{base}/ingest") as ingest_ws:
-                await ingest_ws.send(json.dumps({
-                    "type": "hello",
-                    "host": {"host_id": "downstream"},
-                }))
+                await ingest_ws.send(
+                    json.dumps(
+                        {
+                            "type": "hello",
+                            "host": {"host_id": "downstream"},
+                        }
+                    )
+                )
                 # Drain online presence.
                 await asyncio.wait_for(viewer.recv(), 2.0)
 
@@ -231,10 +242,14 @@ async def test_message_id_dedup():
     async with _running_daemon(cfg) as (_, base):
         async with websockets.connect(f"{base}/ws?mode=all") as viewer:
             async with websockets.connect(f"{base}/ingest") as ingest_ws:
-                await ingest_ws.send(json.dumps({
-                    "type": "hello",
-                    "host": {"host_id": "downstream"},
-                }))
+                await ingest_ws.send(
+                    json.dumps(
+                        {
+                            "type": "hello",
+                            "host": {"host_id": "downstream"},
+                        }
+                    )
+                )
                 await asyncio.wait_for(viewer.recv(), 2.0)  # online presence
 
                 frame = _make_state_frame()
@@ -254,10 +269,14 @@ async def test_offline_presence_on_disconnect():
     async with _running_daemon(cfg) as (_, base):
         async with websockets.connect(f"{base}/ws?mode=all") as viewer:
             async with websockets.connect(f"{base}/ingest") as ingest_ws:
-                await ingest_ws.send(json.dumps({
-                    "type": "hello",
-                    "host": {"host_id": "downstream"},
-                }))
+                await ingest_ws.send(
+                    json.dumps(
+                        {
+                            "type": "hello",
+                            "host": {"host_id": "downstream"},
+                        }
+                    )
+                )
                 online = json.loads(await asyncio.wait_for(viewer.recv(), 2.0))
                 assert online["status"] == "online"
 
@@ -283,10 +302,14 @@ async def test_malformed_frame_does_not_drop_connection():
     async with _running_daemon(cfg) as (_, base):
         async with websockets.connect(f"{base}/ws?mode=all") as viewer:
             async with websockets.connect(f"{base}/ingest") as ingest_ws:
-                await ingest_ws.send(json.dumps({
-                    "type": "hello",
-                    "host": {"host_id": "downstream"},
-                }))
+                await ingest_ws.send(
+                    json.dumps(
+                        {
+                            "type": "hello",
+                            "host": {"host_id": "downstream"},
+                        }
+                    )
+                )
                 await asyncio.wait_for(viewer.recv(), 2.0)  # online
 
                 # Send garbage — server should skip it.

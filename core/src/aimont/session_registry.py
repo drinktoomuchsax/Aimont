@@ -138,7 +138,8 @@ class SessionRegistry:
         async with self._lock:
             now = datetime.now(timezone.utc)
             expired = [
-                sid for sid, last in self._last_active.items()
+                sid
+                for sid, last in self._last_active.items()
                 if (now - last).total_seconds() >= self._timeout_sec
             ]
             for sid in expired:

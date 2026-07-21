@@ -178,8 +178,8 @@ def test_v1_state_frame_payload_parses():
     }
     frame = StateFrame.model_validate(v1_payload)
     assert frame.session_id == "abc123"
-    assert frame.host is None              # v1 had no host
-    assert frame.forwarded_by == []        # defaults
+    assert frame.host is None  # v1 had no host
+    assert frame.forwarded_by == []  # defaults
     assert isinstance(frame.message_id, str) and frame.message_id  # auto-generated
 
 
