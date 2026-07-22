@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 from typing import Any
 
 import websockets
@@ -136,8 +137,13 @@ class PushTransport(BaseTransport):
 
             if self._stopped.is_set():
                 return
+            # Equal jitter: wait half the backoff plus a random half. Without
+            # jitter, every daemon connected to an upstream that just
+            # restarted reconnects in lockstep, hammering it in sync
+            # (thundering herd). Spreading the delay smooths the load.
+            delay = backoff / 2 + random.uniform(0, backoff / 2)
             try:
-                await asyncio.wait_for(self._stopped.wait(), timeout=backoff)
+                await asyncio.wait_for(self._stopped.wait(), timeout=delay)
                 return  # stopped during backoff
             except asyncio.TimeoutError:
                 pass  # backoff elapsed, retry
