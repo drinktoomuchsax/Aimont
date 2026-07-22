@@ -173,22 +173,25 @@ class SessionRegistry:
         meta = self._metadata.pop(session_id, None)
         agent_kind = self._agent_kinds.pop(session_id, DEFAULT_AGENT_KIND)
 
-        session_frame = None
-        if sm is not None:
-            previous = sm.effective_state
-            sm._apply(AimontState.OFF, previous)
-            session_frame = StateFrame(
-                host=self._host_identity,
-                session_id=session_id,
-                agent_kind=agent_kind,
-                state=AimontState.OFF,
-                previous=previous,
-                duration=sm.last_duration(),
-                triggered_by=hook_event,
-                metadata=meta,
-                durations=sm.durations,
-                timestamp=datetime.now(timezone.utc),
-            )
+        if sm is None:
+            # SESSION_END for a session we never tracked: nothing changed, so
+            # don't emit a redundant aggregate frame to every viewer.
+            return None, None
+
+        previous = sm.effective_state
+        sm._apply(AimontState.OFF, previous)
+        session_frame = StateFrame(
+            host=self._host_identity,
+            session_id=session_id,
+            agent_kind=agent_kind,
+            state=AimontState.OFF,
+            previous=previous,
+            duration=sm.last_duration(),
+            triggered_by=hook_event,
+            metadata=meta,
+            durations=sm.durations,
+            timestamp=datetime.now(timezone.utc),
+        )
 
         aggregate_frame = self._build_aggregate_frame()
         return session_frame, aggregate_frame
