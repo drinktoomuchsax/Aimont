@@ -124,3 +124,39 @@ async def test_list_sessions_includes_agent_kind(client):
     sessions = r.json()["sessions"]
     assert sessions["a1"]["agent_kind"] == "claude"
     assert sessions["b1"]["agent_kind"] == "codex"
+
+
+@pytest.mark.asyncio
+async def test_periodic_cleanup_survives_a_failing_sweep():
+    """A raising cleanup_expired() must not kill the cleanup loop; the next
+    cycle should still run."""
+    import asyncio
+    from unittest.mock import patch
+
+    from aimont.config import AimontConfig
+    from aimont.server import App
+
+    app = App(AimontConfig())
+
+    calls = {"n": 0}
+
+    async def flaky_cleanup():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("boom")
+        return []
+
+    # Skip the real 300s wait; cancel after enough cycles to prove recovery.
+    async def fake_sleep(_):
+        if calls["n"] >= 2:
+            raise asyncio.CancelledError
+
+    with (
+        patch.object(app.registry, "cleanup_expired", side_effect=flaky_cleanup),
+        patch("aimont.server.asyncio.sleep", side_effect=fake_sleep),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await app._periodic_cleanup()
+
+    # Loop ran a second time after the first raised -> it recovered.
+    assert calls["n"] >= 2
