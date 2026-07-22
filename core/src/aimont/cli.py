@@ -251,7 +251,15 @@ def issue(
     upstream: str = typer.Option(
         ..., "--upstream", help="Upstream URL, e.g. wss://aimont.company.com/ingest"
     ),
-    secret: str = typer.Option(..., "--secret", help="Bearer secret the upstream expects"),
+    secret: str | None = typer.Option(
+        None,
+        "--secret",
+        help=(
+            "Bearer secret the upstream expects. Prefer AIMONT_ISSUE_SECRET or the "
+            "interactive prompt — a secret passed here is visible in `ps` and shell history."
+        ),
+        envvar="AIMONT_ISSUE_SECRET",
+    ),
     display_name_hint: str | None = typer.Option(
         None, "--display-name", help="Optional hint shown on dashboards"
     ),
@@ -265,6 +273,12 @@ def issue(
     employees, who can run `aimont join <token>` to connect.
     """
     from aimont.auth import AimontToken, encode_token
+
+    # Fall back to a hidden prompt when the secret wasn't supplied via flag or
+    # env var, so it never has to appear on the command line (visible in `ps`
+    # and shell history).
+    if not secret:
+        secret = typer.prompt("Upstream bearer secret", hide_input=True)
 
     bundle = AimontToken(
         upstream_url=upstream,
