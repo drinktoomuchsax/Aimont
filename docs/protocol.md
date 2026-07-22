@@ -405,9 +405,10 @@ aimont leave --yes  # scripted
 IT/admins generate tokens with:
 
 ```bash
+# Secret via env so it stays out of argv / shell history (or omit for a prompt).
+AIMONT_ISSUE_SECRET="$(openssl rand -hex 16)" \
 aimont issue \
   --upstream wss://recall.company.com/ingest \
-  --secret   "$(openssl rand -hex 16)" \
   --display-name "Default Display" \
   --issuer   "Acme Corp"
 ```

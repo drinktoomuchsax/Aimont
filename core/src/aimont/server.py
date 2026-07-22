@@ -246,9 +246,12 @@ class App:
     def _default_session_id(self) -> str:
         return "default"
 
-    async def ws_connect(self, ws: WebSocket, mode: str, session_filter: str | None) -> None:
+    async def ws_connect(self, ws: WebSocket, mode: str, session_filter: str | None) -> bool:
+        """Returns True if the socket was accepted, False if it was closed
+        (e.g. invalid mode) so the endpoint can skip the receive loop."""
         if self._ws_transport:
-            await self._ws_transport.connect(ws, mode=mode, session_filter=session_filter)
+            return await self._ws_transport.connect(ws, mode=mode, session_filter=session_filter)
+        return False
 
     async def ws_disconnect(self, ws: WebSocket) -> None:
         if self._ws_transport:
@@ -347,7 +350,10 @@ def create_api(app_obj: App | None = None) -> FastAPI:
         mode=session: only frames for a specific session (requires ?session=ID)
         """
         app = get_app_instance(fastapi_app)
-        await app.ws_connect(ws, mode=mode, session_filter=session)
+        accepted = await app.ws_connect(ws, mode=mode, session_filter=session)
+        if not accepted:
+            # Socket was closed (e.g. invalid mode); don't read from it.
+            return
         try:
             while True:
                 await ws.receive_text()

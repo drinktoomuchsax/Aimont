@@ -115,9 +115,11 @@ uv run aimont daemon
 
 **Issue a token per teammate** (from the admin machine):
 ```bash
+# Pass the secret via env (or omit it entirely for a hidden prompt) so it
+# never lands in argv / shell history.
+AIMONT_ISSUE_SECRET="$(< ~/.config/aimont/ingest-secret)" \
 uv run aimont issue \
   --upstream wss://recall.yourteam.com/ingest \
-  --secret   "$(< ~/.config/aimont/ingest-secret)" \
   --issuer   "Your Team Name"
 # Prints an opaque token string — share privately (1Password, DM, etc.).
 ```
@@ -196,7 +198,7 @@ Three ways for a daemon to know where to push. Pick whichever suits your ops sty
 ### Via token (recommended for non-developers)
 
 ```bash
-uv run aimont issue --upstream wss://... --secret ... > team-token.txt
+AIMONT_ISSUE_SECRET=... uv run aimont issue --upstream wss://... > team-token.txt
 # Distribute team-token.txt (privately).
 
 # Each teammate:
@@ -213,7 +215,7 @@ uv run aimont leave
 
 ```bash
 export AIMONT_UPSTREAM_URL=wss://recall.yourteam.com/ingest
-export AIMONT_TOKEN=<the bearer secret>
+export AIMONT_TOKEN="<the bearer secret>"
 uv run aimont daemon
 ```
 
