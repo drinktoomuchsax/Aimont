@@ -32,8 +32,13 @@ BELL_STATES = {
 class TerminalTransport(BaseTransport):
     def __init__(self, name: str, options: dict[str, Any]):
         super().__init__(name, options)
-        self._bell_enabled = options.get("bell", True)
-        self._title_enabled = options.get("title", True)
+        # Only touch the terminal when stdout is actually a TTY. When the
+        # daemon runs detached (systemd, nohup, redirected logs), stdout is a
+        # file/pipe and writing ANSI title/bell sequences just corrupts it.
+        # `force` overrides the check for tests or exotic setups.
+        interactive = options.get("force", False) or sys.stdout.isatty()
+        self._bell_enabled = options.get("bell", True) and interactive
+        self._title_enabled = options.get("title", True) and interactive
 
     async def start(self) -> None:
         pass
