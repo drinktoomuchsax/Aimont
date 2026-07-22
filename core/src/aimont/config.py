@@ -147,6 +147,13 @@ DEFAULT_TRANSPORTS: dict[str, dict[str, Any]] = {
 
 
 def load_config(path: Path | None = None) -> AimontConfig:
+    # An explicit path wins; otherwise honor AIMONT_CONFIG (set by
+    # `aimont daemon --config ...`), then fall back to the default search.
+    if path is None:
+        env_path = os.environ.get("AIMONT_CONFIG")
+        if env_path:
+            path = Path(env_path)
+
     candidates = (
         [path]
         if path
@@ -155,6 +162,11 @@ def load_config(path: Path | None = None) -> AimontConfig:
             Path.cwd() / ".aimont.yaml",
         ]
     )
+
+    # An explicitly requested config that doesn't exist is a user error —
+    # don't silently fall through to defaults.
+    if path is not None and not path.exists():
+        raise FileNotFoundError(f"config file not found: {path}")
 
     merged: dict[str, Any] = {}
     for p in candidates:
