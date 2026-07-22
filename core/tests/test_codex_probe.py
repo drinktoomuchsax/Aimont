@@ -140,6 +140,35 @@ def test_idle_emits_stop_after_quiet_window(probe, captured_posts):
     assert probe._tracked[4444].last_state == "awaiting_input"
 
 
+def test_reactivation_after_idle_emits_working_again(probe, captured_posts):
+    # A process that goes busy → quiet (Stop) → busy again must emit a fresh
+    # UserPromptSubmit on the second busy spell, not stay stuck in
+    # awaiting_input. Models a Codex session that idles then resumes.
+    proc = FakeProc(pid=6666)
+    import time
+
+    with (
+        patch.object(codex_probe, "_is_codex_cli", return_value=True),
+        patch.object(codex_probe.psutil, "process_iter", return_value=[proc]),
+    ):
+        probe.tick()  # discover + prime
+        probe.tick()  # out of priming
+
+        with patch.object(codex_probe, "_sum_cpu", _fake_sum_cpu(80.0)):
+            probe.tick()  # -> working
+        time.sleep(0.05)
+        with patch.object(codex_probe, "_sum_cpu", _fake_sum_cpu(0.1)):
+            probe.tick()  # -> awaiting_input (Stop)
+        assert probe._tracked[6666].last_state == "awaiting_input"
+        captured_posts.clear()
+
+        with patch.object(codex_probe, "_sum_cpu", _fake_sum_cpu(80.0)):
+            probe.tick()  # busy again -> working
+
+    assert captured_posts == [{"event": "UserPromptSubmit", "session_id": "codex-6666-1000000"}]
+    assert probe._tracked[6666].last_state == "working"
+
+
 def test_does_not_duplicate_working_event(probe, captured_posts):
     proc = FakeProc(pid=5555)
     with (
