@@ -71,8 +71,8 @@ async def test_get_session_by_id(client):
 @pytest.mark.asyncio
 async def test_get_nonexistent_session(client):
     r = await client.get("/sessions/nonexistent")
-    data = r.json()
-    assert "error" in data
+    assert r.status_code == 404
+    assert r.json()["detail"] == "session_not_found"
 
 
 @pytest.mark.asyncio

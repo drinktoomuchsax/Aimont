@@ -322,7 +322,7 @@ def create_api(app_obj: App | None = None) -> FastAPI:
         app = get_app_instance(fastapi_app)
         info = await app.registry.get_session_info(session_id)
         if info is None:
-            return {"error": "session not found"}
+            raise HTTPException(status_code=404, detail="session_not_found")
         return info
 
     @fastapi_app.websocket("/ws")
