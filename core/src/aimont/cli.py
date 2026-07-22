@@ -9,6 +9,29 @@ import uvicorn
 
 app = typer.Typer(name="aimont", help="Human-in-the-loop state broadcast for Claude Code.")
 
+
+def _version_callback(value: bool) -> None:
+    if value:
+        from aimont import __version__
+
+        typer.echo(f"aimont {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        help="Show the aimont version and exit.",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    """Aimont CLI."""
+
+
 STATE_ICONS = {
     "off": "  ",
     "idle": "💤",
