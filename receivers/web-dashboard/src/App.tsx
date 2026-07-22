@@ -10,7 +10,7 @@ function App() {
     <div className="app">
       {/* Top bar */}
       <div className="topbar">
-        <span className="topbar-title">claude-recall</span>
+        <span className="topbar-title">aimont</span>
         <span className="topbar-sep">│</span>
         <span className="topbar-agg">{STATE_DISPLAY[aggregate.state] ?? aggregate.state}</span>
         <span className="topbar-sep">│</span>
