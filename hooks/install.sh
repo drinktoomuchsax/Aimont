@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Claude Recall hooks into Claude Code settings.
+# Install Aimont hooks into Claude Code settings.
 # Usage: ./install.sh [--global]
 
 set -e
@@ -13,7 +13,7 @@ else
     SETTINGS_FILE="${2:-.claude/settings.json}"
 fi
 
-INSTALL_DIR="$HOME/.claude-recall/hooks"
+INSTALL_DIR="$HOME/.aimont/hooks"
 mkdir -p "$INSTALL_DIR"
 cp "$EMIT_SCRIPT" "$INSTALL_DIR/emit.py"
 chmod +x "$INSTALL_DIR/emit.py"

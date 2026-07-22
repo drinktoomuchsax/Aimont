@@ -1,28 +1,28 @@
 {
   "hooks": {
     "SessionStart": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}
     ],
     "SessionEnd": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}
     ],
     "UserPromptSubmit": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}
     ],
     "Stop": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}
     ],
     "StopFailure": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}
     ],
     "Notification": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}
     ],
     "PreToolUse": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}
     ],
     "PostToolUse": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py"}]}
     ]
   }
 }
