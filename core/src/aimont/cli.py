@@ -26,18 +26,33 @@ def daemon(
     host: str = typer.Option("127.0.0.1", help="Bind address"),
     port: int = typer.Option(8765, help="Bind port"),
     config: Path | None = typer.Option(None, help="Config file path"),
+    log_level: str = typer.Option(
+        "info",
+        "--log-level",
+        help="Log verbosity: critical, error, warning, info, debug, trace.",
+        envvar="AIMONT_LOG_LEVEL",
+    ),
 ):
     """Start the Aimont daemon."""
-    if config:
-        import os
+    import os
 
+    if config:
         os.environ["AIMONT_CONFIG"] = str(config)
+
+    level = log_level.lower()
+    valid = {"critical", "error", "warning", "info", "debug", "trace"}
+    if level not in valid:
+        typer.echo(
+            f"Invalid --log-level {log_level!r}. Choose from: {', '.join(sorted(valid))}.",
+            err=True,
+        )
+        raise typer.Exit(2)
 
     uvicorn.run(
         "aimont.server:api",
         host=host,
         port=port,
-        log_level="info",
+        log_level=level,
     )
 
 
