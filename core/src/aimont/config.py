@@ -10,11 +10,21 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from aimont.auth import AimontToken, TokenDecodeError, decode_token
 
 logger = logging.getLogger(__name__)
+
+
+class ConfigError(Exception):
+    """Raised when a config file can't be parsed or fails validation.
+
+    Carries a human-readable message (with the offending path) so the
+    daemon can fail startup with an actionable error instead of an opaque
+    traceback.
+    """
+
 
 TOKEN_FILE_PATH = Path.home() / ".config" / "aimont" / "token"
 
@@ -150,7 +160,14 @@ def load_config(path: Path | None = None) -> AimontConfig:
     for p in candidates:
         if p and p.exists():
             with open(p) as f:
-                data = yaml.safe_load(f)
+                try:
+                    data = yaml.safe_load(f)
+                except yaml.YAMLError as e:
+                    raise ConfigError(f"invalid YAML in config file {p}: {e}") from e
+                if data is not None and not isinstance(data, dict):
+                    raise ConfigError(
+                        f"config file {p} must contain a mapping, got {type(data).__name__}"
+                    )
                 if data:
                     merged = _deep_merge(merged, data)
 
@@ -163,7 +180,10 @@ def load_config(path: Path | None = None) -> AimontConfig:
     _apply_push_env_overrides(merged)
     _apply_ingest_env_overrides(merged)
 
-    return AimontConfig.model_validate(merged)
+    try:
+        return AimontConfig.model_validate(merged)
+    except ValidationError as e:
+        raise ConfigError(f"config failed validation: {e}") from e
 
 
 def _apply_push_env_overrides(merged: dict[str, Any]) -> None:
