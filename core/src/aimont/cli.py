@@ -194,6 +194,8 @@ def join(
     configuration is required. After this command succeeds, restart the
     daemon to activate the push transport.
     """
+    import os
+
     from aimont.auth import TokenDecodeError, decode_token
     from aimont.config import TOKEN_FILE_PATH
 
@@ -211,9 +213,15 @@ def join(
         )
         raise typer.Exit(1)
 
+    # Token is a credential. Create the file 0600 from the start via os.open
+    # rather than write-then-chmod, which leaves a brief window where the file
+    # is readable by other local users under the default umask.
     TOKEN_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    TOKEN_FILE_PATH.write_text(token + "\n", encoding="utf-8")
-    # 0600 — token is a credential; don't let other local users read it.
+    fd = os.open(TOKEN_FILE_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(token + "\n")
+    # Re-assert 0600 in case the file pre-existed with looser perms (O_CREAT
+    # doesn't change the mode of an existing file).
     TOKEN_FILE_PATH.chmod(0o600)
 
     typer.echo(f"✓ Joined {bundle.issuer or bundle.upstream_url}")
