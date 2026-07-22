@@ -58,14 +58,14 @@ Your own machines only: work laptop + home machine + a VPS you already have. You
 **Upstream** (the VPS or the machine that stays on):
 ```bash
 uv sync
-export CLAUDE_RECALL_INGEST_ENABLED=1
+export AIMONT_INGEST_ENABLED=1
 # No allowlist — only accessible over private network.
 uv run aimont daemon --host 0.0.0.0 --port 8765
 ```
 
 **Downstream** (each laptop):
 ```bash
-export CLAUDE_RECALL_UPSTREAM_URL=ws://vps.internal:8765/ingest
+export AIMONT_UPSTREAM_URL=ws://vps.internal:8765/ingest
 uv run aimont daemon
 ```
 
@@ -104,11 +104,11 @@ cloudflared tunnel run recall &
 #    Persist the secret to a 0600 file instead of echoing it — the
 #    terminal scrollback, tmux buffers, `history`, and any log shipper
 #    watching stdout would otherwise capture the bearer token verbatim.
-export CLAUDE_RECALL_INGEST_ENABLED=1
-export CLAUDE_RECALL_INGEST_TOKENS=$(openssl rand -hex 16)
+export AIMONT_INGEST_ENABLED=1
+export AIMONT_INGEST_TOKENS=$(openssl rand -hex 16)
 umask 077
 mkdir -p ~/.config/aimont
-printf '%s\n' "$CLAUDE_RECALL_INGEST_TOKENS" > ~/.config/aimont/ingest-secret
+printf '%s\n' "$AIMONT_INGEST_TOKENS" > ~/.config/aimont/ingest-secret
 echo "Ingest secret saved to ~/.config/aimont/ingest-secret (0600)"
 uv run aimont daemon
 ```
@@ -146,7 +146,7 @@ developer laptops ─► team upstream ─► company upstream ─► CEO dashbo
                         lead's view)
 ```
 
-Each team gets a sub-dashboard and sees their own people in real time; the company-wide view is aggregated from the team tier. You deploy the middle tier exactly like Recipe 2, except it also sets `CLAUDE_RECALL_UPSTREAM_URL` to push to the parent.
+Each team gets a sub-dashboard and sees their own people in real time; the company-wide view is aggregated from the team tier. You deploy the middle tier exactly like Recipe 2, except it also sets `AIMONT_UPSTREAM_URL` to push to the parent.
 
 **Split-horizon and `message_id` dedup (see [protocol.md](protocol.md#ingest-endpoint-schema-v2-pr-3)) make this safe** — frames never loop back, and duplicates from reconnect storms are discarded.
 
@@ -171,7 +171,7 @@ Tokens are not cryptographically signed in the current release. If you suspect a
 
 ```bash
 # Remove the old secret from the upstream's allowlist.
-export CLAUDE_RECALL_INGEST_TOKENS="new-secret-1,new-secret-2"   # without the old one
+export AIMONT_INGEST_TOKENS="new-secret-1,new-secret-2"   # without the old one
 # Restart the upstream. Old tokens now get 401 on /ingest.
 ```
 
@@ -212,8 +212,8 @@ uv run aimont leave
 ### Via environment variables (recommended for CI / scripted setups)
 
 ```bash
-export CLAUDE_RECALL_UPSTREAM_URL=wss://recall.yourteam.com/ingest
-export CLAUDE_RECALL_TOKEN=<the bearer secret>
+export AIMONT_UPSTREAM_URL=wss://recall.yourteam.com/ingest
+export AIMONT_TOKEN=<the bearer secret>
 uv run aimont daemon
 ```
 
@@ -251,7 +251,7 @@ After=network.target
 [Service]
 User=recall
 WorkingDirectory=/opt/aimont
-Environment="CLAUDE_RECALL_INGEST_ENABLED=1"
+Environment="AIMONT_INGEST_ENABLED=1"
 # Secrets live in a root:root 0600 file so they never land in
 # world-readable systemd unit paths, journald output, or config backups.
 EnvironmentFile=/etc/aimont/ingest.env
@@ -268,7 +268,7 @@ Create the env file separately with strict permissions:
 ```bash
 sudo install -d -o root -g root -m 0700 /etc/aimont
 sudo tee /etc/aimont/ingest.env >/dev/null <<'EOF'
-CLAUDE_RECALL_INGEST_TOKENS=secret1,secret2
+AIMONT_INGEST_TOKENS=secret1,secret2
 EOF
 sudo chmod 0600 /etc/aimont/ingest.env
 ```
@@ -316,7 +316,7 @@ Walk down the chain:
 1. **Is push enabled?** Check `~/.config/aimont/token` exists, or the env vars are set in the daemon's environment (not just your shell — systemd services have their own env).
 2. **Is the upstream reachable?** `curl -I https://recall.yourteam.com/` should return 200 (or 403 if Access is enabled; that's fine too).
 3. **Is the token valid?** On the upstream, check journal for `401` entries around the time the daemon started.
-4. **Is `/ingest` actually enabled?** Upstream returns `403` on `/ingest` if `CLAUDE_RECALL_INGEST_ENABLED` is unset. Curl it with a bogus Bearer to see:
+4. **Is `/ingest` actually enabled?** Upstream returns `403` on `/ingest` if `AIMONT_INGEST_ENABLED` is unset. Curl it with a bogus Bearer to see:
    ```bash
    curl -i -H "Upgrade: websocket" -H "Connection: Upgrade" -H "Authorization: Bearer test" \
      -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" -H "Sec-WebSocket-Version: 13" \
@@ -328,7 +328,7 @@ Walk down the chain:
 Usually one of:
 
 - **Push reconnect**: daemon lost its WebSocket (network hiccup) and reconnected. You'll see offline → online within ~1-60s. Expected behavior.
-- **Duplicate daemon**: two processes on the same host both pushing with the same `host_id`. Pick one and kill the other. `host_id` defaults to `socket.gethostname()`; override with `CLAUDE_RECALL_HOST_ID` if you genuinely need two instances on one machine.
+- **Duplicate daemon**: two processes on the same host both pushing with the same `host_id`. Pick one and kill the other. `host_id` defaults to `socket.gethostname()`; override with `AIMONT_HOST_ID` if you genuinely need two instances on one machine.
 
 ### "A frame I expected never arrived"
 
