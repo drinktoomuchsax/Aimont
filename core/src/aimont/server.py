@@ -232,7 +232,16 @@ class App:
     async def _periodic_cleanup(self) -> None:
         while True:
             await asyncio.sleep(300)
-            await self.registry.cleanup_expired()
+            try:
+                await self.registry.cleanup_expired()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # A single failed sweep must not kill the loop for the
+                # daemon's lifetime — that would let expired sessions (the
+                # very thing this bounds) accumulate unbounded. Log and
+                # retry on the next cycle.
+                logger.exception("periodic session cleanup failed; will retry next cycle")
 
     def _default_session_id(self) -> str:
         return "default"
