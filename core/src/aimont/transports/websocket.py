@@ -79,6 +79,15 @@ class WebSocketTransport(BaseTransport):
         self, ws: WebSocket, mode: str = "aggregate", session_filter: str | None = None
     ) -> None:
         await ws.accept()
+        # Reject misconfigured subscriptions loudly instead of accepting them
+        # and silently never delivering a frame (which looks identical to "no
+        # activity" from the client's side). 1008 = policy violation.
+        if mode not in ("aggregate", "all", "session"):
+            await ws.close(code=1008, reason=f"invalid mode: {mode!r}")
+            return
+        if mode == "session" and not session_filter:
+            await ws.close(code=1008, reason="mode=session requires ?session=<id>")
+            return
         sub = Subscriber(ws=ws, mode=mode, session_filter=session_filter)
         async with self._lock:
             self._subscribers.append(sub)

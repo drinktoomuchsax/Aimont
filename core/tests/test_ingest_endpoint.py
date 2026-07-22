@@ -229,6 +229,24 @@ async def test_relay_frame_is_broadcast_to_local_viewers():
                 assert "upstream-host" in relayed["forwarded_by"]
 
 
+async def test_ws_invalid_mode_is_rejected():
+    cfg = _default_config(ingest_enabled=True)
+    async with _running_daemon(cfg) as (_, base):
+        async with websockets.connect(f"{base}/ws?mode=bogus") as ws:
+            with pytest.raises(websockets.exceptions.ConnectionClosed) as ei:
+                await asyncio.wait_for(ws.recv(), 2.0)
+            assert ei.value.rcvd.code == 1008
+
+
+async def test_ws_session_mode_without_session_id_is_rejected():
+    cfg = _default_config(ingest_enabled=True)
+    async with _running_daemon(cfg) as (_, base):
+        async with websockets.connect(f"{base}/ws?mode=session") as ws:
+            with pytest.raises(websockets.exceptions.ConnectionClosed) as ei:
+                await asyncio.wait_for(ws.recv(), 2.0)
+            assert ei.value.rcvd.code == 1008
+
+
 async def test_split_horizon_drops_frames_that_visited_us():
     cfg = _default_config(ingest_enabled=True, host_id="upstream-host")
     async with _running_daemon(cfg) as (_, base):
