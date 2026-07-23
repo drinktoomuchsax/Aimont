@@ -441,8 +441,18 @@ def _parse_ingest_frame(raw: str) -> StateFrame | AggregateFrame | PresenceFrame
         return None
     if not isinstance(data, dict):
         return None
-    version = data.get("schema_version", FRAME_SCHEMA_VERSION)
-    if isinstance(version, int) and version > FRAME_SCHEMA_VERSION:
+    # Reject unknown majors *before* validation. pydantic coerces a stringified
+    # or float schema_version ("3", 3.0) to int, so checking isinstance(int)
+    # here would let those bypass the guard and be relayed anyway — coerce the
+    # same way pydantic will, then compare. bool is an int subclass but is not a
+    # meaningful version, so treat it (and anything uncoercible) as "assume
+    # current" and let model validation decide.
+    raw_version = data.get("schema_version", FRAME_SCHEMA_VERSION)
+    try:
+        version = int(raw_version) if not isinstance(raw_version, bool) else FRAME_SCHEMA_VERSION
+    except (TypeError, ValueError):
+        version = FRAME_SCHEMA_VERSION
+    if version > FRAME_SCHEMA_VERSION:
         return None
     ftype = data.get("type")
     try:
