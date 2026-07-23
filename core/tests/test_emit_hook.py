@@ -96,5 +96,39 @@ def test_start_daemon_lock_prevents_concurrent_spawn(emit, tmp_path, monkeypatch
     assert len(spawned) == 1
 
 
+def test_start_daemon_holds_lock_until_port_binds(emit, tmp_path, monkeypatch):
+    """The winner must hold the start lock across the bind window, not release
+    it the instant Popen returns. Otherwise a hook firing during the caller's
+    retry window grabs the freed lock and spawns a duplicate that fails to bind.
+
+    We simulate a child that binds "late": while _wait_for_port is still
+    polling, a second _start_daemon must find the lock held and back off.
+    """
+    lockfile = tmp_path / "daemon.start.lock"
+    monkeypatch.setattr(emit, "LOCKFILE", str(lockfile))
+    monkeypatch.setattr(emit, "PIDFILE", str(tmp_path / "daemon.pid"))
+
+    spawned = []
+    monkeypatch.setattr(emit.subprocess, "Popen", lambda *a, **k: spawned.append(a) or _FakeProc())
+
+    second_result = {}
+
+    def fake_wait_for_port(host, port, timeout_sec):
+        # Stand in for the child's bind delay. A racing hook fires now, while
+        # the winner still holds the lock, and must back off.
+        emit._start_daemon()
+        second_result["spawns_after_race"] = len(spawned)
+        return True
+
+    monkeypatch.setattr(emit, "_wait_for_port", fake_wait_for_port)
+
+    emit._start_daemon()
+
+    # Only the first _start_daemon spawned; the reentrant call during the bind
+    # wait saw the lock held and did not spawn a second daemon.
+    assert second_result["spawns_after_race"] == 1
+    assert len(spawned) == 1
+
+
 class _FakeProc:
     pid = 4321
