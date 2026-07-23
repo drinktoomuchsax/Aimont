@@ -17,11 +17,14 @@ from aimont.models import EVENT_PAYLOAD_VERSION
 
 
 class FakeProc:
-    def __init__(self, pid: int, create_time: float = 1_000_000.0, cpu_sequence=None):
+    def __init__(
+        self, pid: int, create_time: float = 1_000_000.0, cpu_sequence=None, children=None
+    ):
         self.pid = pid
         self._create_time = create_time
         # cpu_sequence lets each test drive CPU% per tick.
         self._cpu_sequence = list(cpu_sequence or [0.0])
+        self._children = list(children or [])
         self._dead = False
 
     def cpu_percent(self, interval=None):
@@ -35,7 +38,7 @@ class FakeProc:
         return self._create_time
 
     def children(self, recursive=False):
-        return []
+        return list(self._children)
 
     def kill(self):
         self._dead = True
@@ -212,6 +215,46 @@ def test_does_not_duplicate_working_event(probe, captured_posts):
             probe.tick()
 
     assert captured_posts == []
+
+
+def test_sum_cpu_counts_children_after_priming():
+    """A busy worker CHILD must contribute to the summed CPU. children() returns
+    fresh Process instances each call, so _sum_cpu must persist the primed child
+    handle on the TrackedProc and sample THAT instance next tick — otherwise
+    every child reads a first-call 0.0 forever and worker-driven Codex sessions
+    look perpetually idle."""
+    # Parent idles at 1%; the worker child does the real work at 90%.
+    child = FakeProc(pid=222, cpu_sequence=[90.0])
+    parent = FakeProc(pid=111, cpu_sequence=[1.0], children=[child])
+    tp = codex_probe.TrackedProc(
+        pid=111, create_time=1_000_000.0, session_id="codex-111-1000000", proc=parent
+    )
+
+    # First _sum_cpu: parent counts, child is only primed (discarded 0.0).
+    first = codex_probe._sum_cpu(tp)
+    assert first == 1.0
+    assert 222 in tp.children  # child handle now persisted
+
+    # Second _sum_cpu: the SAME primed child instance is sampled → counts.
+    second = codex_probe._sum_cpu(tp)
+    assert second == 91.0
+
+
+def test_sum_cpu_drops_exited_children():
+    """A child that vanishes between ticks must be evicted from the cache so it
+    stops being sampled and the dict doesn't grow unbounded."""
+    child = FakeProc(pid=333, cpu_sequence=[50.0])
+    parent = FakeProc(pid=111, cpu_sequence=[0.0], children=[child])
+    tp = codex_probe.TrackedProc(
+        pid=111, create_time=1_000_000.0, session_id="codex-111-1000000", proc=parent
+    )
+
+    codex_probe._sum_cpu(tp)  # primes child 333
+    assert 333 in tp.children
+
+    parent._children = []  # child exits
+    codex_probe._sum_cpu(tp)
+    assert 333 not in tp.children
 
 
 def test_post_payload_tags_agent_kind_codex():

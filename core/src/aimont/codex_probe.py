@@ -19,7 +19,7 @@ import json
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import psutil
 
@@ -40,6 +40,17 @@ class TrackedProc:
     last_busy_ts: float = 0.0
     last_state: str = "idle"  # "idle" | "working" | "awaiting_input"
     cpu_primed: bool = False  # psutil's cpu_percent needs a warmup call
+    # Persist the parent's Process handle so we sample the SAME instance we
+    # primed. psutil.cpu_percent(interval=None) computes a delta against the
+    # previous sample stored ON THAT INSTANCE; a fresh instance always returns
+    # a meaningless 0.0 on its first call. process_iter() happens to cache the
+    # parent, but children() below does not — so we cache both ourselves.
+    proc: psutil.Process | None = None
+    # Persisted child handles, keyed by pid, for the same reason as `proc`:
+    # children() returns fresh instances every call, so a child sampled by a
+    # newly-built instance would always read 0.0. We prime a child the first
+    # tick we see it and reuse that instance on later ticks.
+    children: dict[int, psutil.Process] = field(default_factory=dict)
 
 
 def _is_codex_cli(p: psutil.Process) -> bool:
@@ -98,18 +109,45 @@ def _post(daemon_url: str, event: str, session_id: str, timeout: float = 0.5) ->
         pass
 
 
-def _sum_cpu(proc: psutil.Process) -> float:
-    """Sum CPU% across the Codex process and its children (CLI often spawns workers)."""
+def _sum_cpu(tp: TrackedProc) -> float:
+    """Sum CPU% across the Codex process and its children (CLI often spawns workers).
+
+    Samples the persisted parent/child Process instances on `tp` so each
+    cpu_percent(interval=None) reads a real delta since the last tick. A child
+    seen for the first time is primed (its meaningless first 0.0 discarded) and
+    starts contributing on the next tick; vanished children are dropped.
+    """
+    proc = tp.proc
+    if proc is None:
+        return 0.0
     total = 0.0
     try:
         total += proc.cpu_percent(interval=None)
-        for child in proc.children(recursive=True):
-            try:
-                total += child.cpu_percent(interval=None)
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
+        live = proc.children(recursive=True)
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         return 0.0
+
+    live_by_pid = {c.pid: c for c in live}
+    # Drop children that have exited so the cache doesn't grow unbounded.
+    for gone in set(tp.children) - set(live_by_pid):
+        tp.children.pop(gone, None)
+
+    for pid, child in live_by_pid.items():
+        cached = tp.children.get(pid)
+        if cached is None:
+            # First time we've seen this child: prime it (first call is 0.0)
+            # and reuse the instance next tick so its delta becomes real.
+            try:
+                child.cpu_percent(interval=None)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            tp.children[pid] = child
+            continue
+        try:
+            total += cached.cpu_percent(interval=None)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            tp.children.pop(pid, None)
+            continue
     return total
 
 
@@ -155,16 +193,20 @@ class CodexProbe:
                 session_id=sid,
                 last_busy_ts=now,
                 last_state="idle",
+                proc=proc,
             )
             # Prime cpu_percent; first call after attach always returns 0.0.
             # Leave cpu_primed False so step 3's skip fires on this same tick —
             # sampling now would read ~0.0 (no elapsed interval since priming).
             # The first real measurement lands a full poll interval later.
+            # Persist each child handle so _sum_cpu samples the primed instance
+            # rather than a fresh one (which would always read 0.0).
             try:
                 proc.cpu_percent(interval=None)
                 for child in proc.children(recursive=True):
                     try:
                         child.cpu_percent(interval=None)
+                        tp.children[child.pid] = child
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         pass
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -189,7 +231,7 @@ class CodexProbe:
                 tp.cpu_primed = True
                 continue
 
-            cpu = _sum_cpu(proc)
+            cpu = _sum_cpu(tp)
             if cpu >= self.busy_threshold:
                 tp.last_busy_ts = now
                 if tp.last_state != "working":
