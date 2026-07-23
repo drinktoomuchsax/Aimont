@@ -45,6 +45,13 @@ export function useRecall() {
   // Reconnect backoff: start at 1s, double up to 30s, reset on a good open.
   // A fixed short interval would hammer a down daemon from every open tab.
   const backoffRef = useRef(1000)
+  // Set true by the effect cleanup so a close() that fires its onclose on a
+  // later tick doesn't schedule a reconnect on the now-unmounted component.
+  // Without it, ws.close() in cleanup runs onclose asynchronously *after* we've
+  // already cleared the reconnect timeout, re-arming an orphan setTimeout that
+  // opens a fresh socket on a dead tree — a leak guaranteed by StrictMode's
+  // mount→unmount→remount in dev.
+  const closedRef = useRef(false)
 
   const connect = useCallback(() => {
     const ws = new WebSocket(WS_URL)
@@ -145,6 +152,8 @@ export function useRecall() {
 
     ws.onclose = () => {
       setConnected(false)
+      // The effect was torn down while this socket was closing — don't reopen.
+      if (closedRef.current) return
       const delay = backoffRef.current
       backoffRef.current = Math.min(delay * 2, 30000)
       reconnectRef.current = setTimeout(connect, delay)
@@ -154,10 +163,19 @@ export function useRecall() {
   }, [])
 
   useEffect(() => {
+    closedRef.current = false
     connect()
     return () => {
-      wsRef.current?.close()
+      closedRef.current = true
       if (reconnectRef.current) clearTimeout(reconnectRef.current)
+      const ws = wsRef.current
+      if (ws) {
+        // Detach handlers before closing so the async onclose can't re-arm a
+        // reconnect (belt-and-suspenders with closedRef) and onmessage can't
+        // setState on the unmounted tree.
+        ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null
+        ws.close()
+      }
     }
   }, [connect])
 
