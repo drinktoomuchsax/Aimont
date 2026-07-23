@@ -19,13 +19,22 @@ Requirements:
 import argparse
 import json
 import os
+import socket
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 
-DAEMON_URL = "http://127.0.0.1:8765/events"
+DAEMON_HOST = "127.0.0.1"
+DAEMON_PORT = 8765
+DAEMON_URL = f"http://{DAEMON_HOST}:{DAEMON_PORT}/events"
 TIMEOUT_SEC = 0.5
+
+# How long the winning starter holds the start lock while waiting for the child
+# to bind the port. Losers back off for the whole window instead of racing to
+# spawn a duplicate that would fail to bind.
+BIND_WAIT_SEC = 2.0
 PIDFILE = os.path.expanduser("~/.aimont/daemon.pid")
 
 PROMPT_MAX_LEN = 100
@@ -129,11 +138,34 @@ def _start_daemon():
         )
         with open(PIDFILE, "w") as f:
             f.write(str(proc.pid))
+        # Popen returns the instant the child is forked/exec'd — well before it
+        # binds the port. If we released the lock here, a hook firing during the
+        # caller's retry window would see the daemon still down, grab the freed
+        # lock, and spawn a duplicate that fails to bind (and clobbers PIDFILE).
+        # Hold the lock until the port is accepting or we time out.
+        _wait_for_port(DAEMON_HOST, DAEMON_PORT, BIND_WAIT_SEC)
     finally:
-        # Release the start lock (also closes the fd). Held only across the
-        # spawn so a genuine future restart isn't blocked.
+        # Release the start lock (also closes the fd). Held across the bind wait
+        # so a genuine future restart isn't blocked.
         if lock_fd is not None:
             os.close(lock_fd)
+
+
+def _wait_for_port(host: str, port: int, timeout_sec: float) -> bool:
+    """Poll until a TCP connect to host:port succeeds or timeout elapses.
+
+    Best-effort: returns True once the daemon is accepting connections, False
+    if it never came up within the window (the caller falls back to its own
+    retry either way).
+    """
+    deadline = time.monotonic() + timeout_sec
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.2):
+                return True
+        except OSError:
+            time.sleep(0.05)
+    return False
 
 
 def _parse_agent(argv: list[str]) -> str:
@@ -192,8 +224,6 @@ def main():
             urllib.request.urlopen(req, timeout=TIMEOUT_SEC)
         except (urllib.error.URLError, ConnectionRefusedError, OSError):
             _start_daemon()
-            import time
-
             time.sleep(0.3)
             try:
                 urllib.request.urlopen(req, timeout=TIMEOUT_SEC)
