@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useRecall, reduceSessionFrame } from './useRecall'
+import { useRecall, reduceSessionFrame, snapshotSessions } from './useRecall'
 import type { SessionState } from './types'
 
 // Minimal fake WebSocket that lets us drive lifecycle events manually and
@@ -166,6 +166,33 @@ describe('reduceSessionFrame', () => {
     })
     expect(next['s-fwd']).toBeDefined()
     expect(next['s-fwd'].state).toBe('unknown')
+  })
+})
+
+describe('snapshotSessions', () => {
+  it('seeds a session from a live REST entry', () => {
+    const init = snapshotSessions({
+      s1: { state: 'working', metadata: { model: 'opus' } },
+    })
+    expect(init.s1).toBeDefined()
+    expect(init.s1.state).toBe('working')
+    expect(init.s1.metadata).toEqual({ model: 'opus' })
+    expect(init.s1.history).toHaveLength(1)
+  })
+
+  it('skips an off session so it does not become a permanent ghost panel', () => {
+    // list_sessions can report an OFF session (degraded via TTL but not yet
+    // removed). Seeding it would leave an "Offline" row no WS frame can delete.
+    const init = snapshotSessions({
+      live: { state: 'working' },
+      ghost: { state: 'off' },
+    })
+    expect(init.live).toBeDefined()
+    expect(init.ghost).toBeUndefined()
+  })
+
+  it('tolerates a missing/undefined sessions object', () => {
+    expect(snapshotSessions(undefined)).toEqual({})
   })
 })
 
