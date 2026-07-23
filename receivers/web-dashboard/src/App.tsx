@@ -1,9 +1,10 @@
 import { useRecall } from './useRecall'
 import SessionRow from './ShopWindow'
+import HostBar from './HostBar'
 import { STATE_DISPLAY } from './types'
 
 function App() {
-  const { sessions, aggregate, connected } = useRecall()
+  const { sessions, aggregate, hosts, connected } = useRecall()
   const sessionList = Object.values(sessions)
 
   return (
@@ -20,6 +21,9 @@ function App() {
           {connected ? '● connected' : '○ reconnecting'}
         </span>
       </div>
+
+      {/* Host presence strip (multi-host deployments) */}
+      <HostBar hosts={hosts} />
 
       {/* Session panels */}
       <div className="panels">
