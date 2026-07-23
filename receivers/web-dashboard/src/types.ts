@@ -18,6 +18,9 @@ export const STATE_DISPLAY: Record<string, string> = {
   awaiting_permission: 'Needs permission',
   notification: 'Has a message',
   error: 'Error',
+  // A state code the daemon sent that this (older) dashboard doesn't know.
+  // Shown rather than dropped, so forward-compat frames don't hide sessions.
+  unknown: 'Unknown',
 }
 
 export interface SessionMetadata {
@@ -126,6 +129,7 @@ export const STATE_COLORS: Record<string, string> = {
   awaiting_permission: '#a855f7',
   notification: '#c084fc',
   error: '#ef4444',
+  unknown: '#777777',
 }
 
 export const MODEL_LABELS: Record<string, { short: string; color: string }> = {

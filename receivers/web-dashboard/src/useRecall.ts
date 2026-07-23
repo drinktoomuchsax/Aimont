@@ -9,7 +9,12 @@ const API_BASE = 'http://127.0.0.1:8765'
 const MAX_HISTORY = 500
 
 function resolveState(s: number | string): string {
-  if (typeof s === 'number') return STATE_NAMES[s] ?? 'off'
+  // An unrecognized numeric code must NOT collapse to 'off': the session
+  // reducer treats 'off' as session-end and deletes the row, so a
+  // forward-compatible daemon emitting a new state value would make the
+  // session vanish from the panel. Render it as 'unknown' (present but
+  // unlabeled) instead. Genuine off is code 0, which maps via STATE_NAMES.
+  if (typeof s === 'number') return STATE_NAMES[s] ?? 'unknown'
   return s
 }
 
