@@ -44,9 +44,8 @@ class StateMachine:
     def durations(self) -> StateDurations:
         """Cumulative durations including time in current state."""
         d = dict(self._durations)
-        current_name = self._current.name.lower()
         elapsed = (datetime.now(timezone.utc) - self._set_at).total_seconds()
-        d[current_name] = d.get(current_name, 0.0) + elapsed
+        self._charge_elapsed(d, elapsed)
         return StateDurations(**d)
 
     async def transition(self, new_state: AimontState) -> tuple[AimontState, bool]:
@@ -88,14 +87,28 @@ class StateMachine:
     def _apply(self, new_state: AimontState, old: AimontState) -> tuple[AimontState, bool]:
         now = datetime.now(timezone.utc)
         elapsed = (now - self._set_at).total_seconds()
-        # Accumulate duration for the state we're leaving
-        old_name = self._current.name.lower()
-        self._durations[old_name] = self._durations.get(old_name, 0.0) + elapsed
+        # Accumulate duration for the state(s) we're leaving. Once the current
+        # state's TTL expires it degrades (effective_state reflects this), so
+        # time past the TTL is charged to the degrade target, not _current.
+        self._charge_elapsed(self._durations, elapsed)
         self._last_duration = elapsed
         # Move to new state
         self._current = new_state
         self._set_at = now
         return new_state, new_state != old
+
+    def _charge_elapsed(self, d: dict[str, float], elapsed: float) -> None:
+        """Add `elapsed` seconds spent in the current state to `d`, splitting at
+        the TTL boundary so accounting matches effective_state: up to ttl_sec is
+        charged to the current state, the remainder to the degrade target."""
+        current_name = self._current.name.lower()
+        ttl_config = self._get_ttl_config()
+        if ttl_config is None or elapsed <= ttl_config.ttl_sec:
+            d[current_name] = d.get(current_name, 0.0) + elapsed
+            return
+        d[current_name] = d.get(current_name, 0.0) + ttl_config.ttl_sec
+        degrade_name = ttl_config.degrade_to.lower()
+        d[degrade_name] = d.get(degrade_name, 0.0) + (elapsed - ttl_config.ttl_sec)
 
     def _is_expired(self) -> bool:
         ttl_config = self._get_ttl_config()
