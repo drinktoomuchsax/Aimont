@@ -160,3 +160,20 @@ async def test_periodic_cleanup_survives_a_failing_sweep():
 
     # Loop ran a second time after the first raised -> it recovered.
     assert calls["n"] >= 2
+
+
+@pytest.mark.asyncio
+async def test_stop_awaits_and_clears_cleanup_task():
+    """After stop(), the periodic-cleanup task must be cancelled AND awaited
+    (not left pending to trigger a 'Task was destroyed' warning)."""
+    from aimont.config import AimontConfig
+    from aimont.server import App
+
+    app = App(AimontConfig())
+    await app.start()
+    task = app._cleanup_task
+    assert task is not None and not task.done()
+
+    await app.stop()
+    assert task.done()  # cancellation was awaited to completion
+    assert app._cleanup_task is None
