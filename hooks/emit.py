@@ -83,8 +83,30 @@ def _extract_metadata(payload, event_name):
     return meta or None
 
 
+LOCKFILE = os.path.expanduser("~/.aimont/daemon.start.lock")
+
+
 def _start_daemon():
     os.makedirs(os.path.dirname(PIDFILE), exist_ok=True)
+
+    # Several hooks can fire near-simultaneously (SessionStart +
+    # UserPromptSubmit + ...), each seeing the daemon down and racing to spawn
+    # one. Take a non-blocking file lock so only the first wins; the others
+    # skip rather than launching duplicate daemons that fail to bind the port.
+    # Best-effort and stdlib-only: on platforms without fcntl, just proceed.
+    lock_fd = None
+    try:
+        import fcntl
+
+        lock_fd = os.open(LOCKFILE, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            # Another hook is already starting the daemon.
+            os.close(lock_fd)
+            return
+    except ImportError:
+        pass  # no fcntl (e.g. Windows) — fall through and start unguarded.
 
     aimont_bin = os.path.expanduser("~/.local/bin/aimont")
     if os.path.exists(aimont_bin):
@@ -98,15 +120,20 @@ def _start_daemon():
             project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         cmd = [uv, "run", "--project", project_dir, "aimont", "daemon"]
 
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-    with open(PIDFILE, "w") as f:
-        f.write(str(proc.pid))
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        with open(PIDFILE, "w") as f:
+            f.write(str(proc.pid))
+    finally:
+        # Release the start lock (also closes the fd). Held only across the
+        # spawn so a genuine future restart isn't blocked.
+        if lock_fd is not None:
+            os.close(lock_fd)
 
 
 def _parse_agent(argv: list[str]) -> str:
