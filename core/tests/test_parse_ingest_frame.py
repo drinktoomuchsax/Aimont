@@ -42,6 +42,34 @@ def test_accepts_older_schema_version():
     assert isinstance(frame, StateFrame)
 
 
+def test_rejects_newer_schema_version_as_string():
+    """pydantic coerces a stringified schema_version to int during validation,
+    so the major-version guard must coerce the same way — otherwise "3" slips
+    past an isinstance(int) check and a future frame is relayed anyway."""
+    raw = _state_frame_json(schema_version=str(FRAME_SCHEMA_VERSION + 1))
+    assert _parse_ingest_frame(raw) is None
+
+
+def test_rejects_newer_schema_version_as_float():
+    """A float schema_version (e.g. 3.0 from a JSON number) is likewise coerced
+    by pydantic, so it must not bypass the guard either."""
+    raw = _state_frame_json(schema_version=float(FRAME_SCHEMA_VERSION + 1))
+    assert _parse_ingest_frame(raw) is None
+
+
+def test_accepts_current_schema_version_as_string():
+    """A stringified *current* version still parses (pydantic coerces it)."""
+    raw = _state_frame_json(schema_version=str(FRAME_SCHEMA_VERSION))
+    assert isinstance(_parse_ingest_frame(raw), StateFrame)
+
+
+def test_garbage_schema_version_defers_to_validation():
+    """A non-numeric schema_version isn't a valid 'newer major', so the guard
+    doesn't short-circuit; pydantic then rejects it as an invalid int."""
+    raw = _state_frame_json(schema_version="garbage")
+    assert _parse_ingest_frame(raw) is None
+
+
 def test_rejects_non_dict_json():
     assert _parse_ingest_frame(json.dumps([1, 2, 3])) is None
     assert _parse_ingest_frame(json.dumps("a string")) is None
