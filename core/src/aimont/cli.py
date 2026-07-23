@@ -10,6 +10,23 @@ import uvicorn
 app = typer.Typer(name="aimont", help="Human-in-the-loop state broadcast for Claude Code.")
 
 
+def _exit_daemon_unreachable(exc: Exception) -> None:
+    """Map an httpx error from a daemon HTTP call to a clean message + exit.
+
+    ConnectError means nothing is listening; a timeout means the daemon is up
+    but not responding. Either way we exit 1 rather than dumping a traceback.
+    """
+    import httpx
+
+    if isinstance(exc, httpx.ConnectError):
+        typer.echo("Daemon is not running.", err=True)
+    elif isinstance(exc, httpx.TimeoutException):
+        typer.echo("Daemon did not respond in time (is it hung?).", err=True)
+    else:
+        typer.echo(f"Could not reach daemon: {exc}", err=True)
+    raise typer.Exit(1)
+
+
 def _version_callback(value: bool) -> None:
     if value:
         from aimont import __version__
@@ -138,9 +155,8 @@ def status(
         typer.echo(f"Sessions: {data['active_sessions']}")
         if data.get("breakdown"):
             typer.echo(f"Breakdown: {data['breakdown']}")
-    except httpx.ConnectError:
-        typer.echo("Daemon is not running.", err=True)
-        raise typer.Exit(1)
+    except httpx.HTTPError as e:
+        _exit_daemon_unreachable(e)
 
 
 @app.command()
@@ -216,9 +232,8 @@ def sessions(
                     typer.echo(f"  [{kind}] {sid}: {state}")
                 else:
                     typer.echo(f"  {sid}: {info}")
-    except httpx.ConnectError:
-        typer.echo("Daemon is not running.", err=True)
-        raise typer.Exit(1)
+    except httpx.HTTPError as e:
+        _exit_daemon_unreachable(e)
 
 
 @app.command(name="codex-probe")
@@ -372,6 +387,5 @@ def test(
             timeout=2.0,
         )
         typer.echo(r.json())
-    except httpx.ConnectError:
-        typer.echo("Daemon is not running.", err=True)
-        raise typer.Exit(1)
+    except httpx.HTTPError as e:
+        _exit_daemon_unreachable(e)
