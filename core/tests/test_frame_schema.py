@@ -211,3 +211,31 @@ def test_v1_payload_with_extra_unknown_field_parses():
     }
     frame = StateFrame.model_validate(payload)  # must not raise
     assert frame.session_id == "abc"
+
+
+def test_aggregate_frame_with_extra_unknown_field_parses():
+    """Forward compatibility must hold for aggregate frames too."""
+    payload = {
+        "type": "aggregate",
+        "state": 30,
+        "active_sessions": 2,
+        "breakdown": {"working": 2},
+        "timestamp": "2026-01-01T00:00:00+00:00",
+        "some_future_field": 123,
+    }
+    frame = AggregateFrame.model_validate(payload)  # must not raise
+    assert frame.active_sessions == 2
+
+
+def test_presence_frame_with_extra_unknown_field_parses():
+    """Forward compatibility must hold for presence frames too."""
+    payload = {
+        "type": "presence",
+        "host": {"host_id": "h1"},
+        "status": "online",
+        "timestamp": "2026-01-01T00:00:00+00:00",
+        "some_future_field": ["a", "b"],
+    }
+    frame = PresenceFrame.model_validate(payload)  # must not raise
+    assert frame.host.host_id == "h1"
+    assert frame.status == "online"
