@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook } from '@testing-library/react'
+import { renderHook, act } from '@testing-library/react'
 import { useRecall } from './useRecall'
 
 // Minimal fake WebSocket that lets us drive lifecycle events manually and
@@ -16,6 +16,9 @@ class FakeWebSocket {
   closed = false
   constructor(public url: string) {
     FakeWebSocket.instances.push(this)
+  }
+  deliver(obj: unknown) {
+    this.onmessage?.({ data: JSON.stringify(obj) })
   }
   close() {
     this.closed = true
@@ -64,5 +67,65 @@ describe('useRecall WebSocket lifecycle', () => {
     // The 1s backoff reconnect should fire and open a second socket.
     vi.advanceTimersByTime(1000)
     expect(FakeWebSocket.instances).toHaveLength(2)
+  })
+})
+
+describe('useRecall session frame handling', () => {
+  beforeEach(() => {
+    FakeWebSocket.instances = []
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket)
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('no network in test'))))
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps a session whose state code is unknown instead of deleting it', () => {
+    const { result } = renderHook(() => useRecall())
+    const ws = FakeWebSocket.instances[0]
+
+    // A forward-compatible daemon emits a state value this dashboard doesn't
+    // know (e.g. 95). It must NOT be treated as 'off' (which would delete the
+    // session row) — it should render as a present-but-unknown state.
+    act(() => {
+      ws.deliver({
+        type: 'session',
+        session_id: 's-fwd',
+        state: 95,
+        previous: 30,
+        timestamp: '2026-07-24T00:00:00+00:00',
+      })
+    })
+
+    expect(result.current.sessions['s-fwd']).toBeDefined()
+    expect(result.current.sessions['s-fwd'].state).toBe('unknown')
+  })
+
+  it('still deletes a session on a genuine off (code 0)', () => {
+    const { result } = renderHook(() => useRecall())
+    const ws = FakeWebSocket.instances[0]
+
+    act(() => {
+      ws.deliver({
+        type: 'session',
+        session_id: 's-live',
+        state: 30,
+        previous: 10,
+        timestamp: '2026-07-24T00:00:00+00:00',
+      })
+    })
+    expect(result.current.sessions['s-live']).toBeDefined()
+
+    act(() => {
+      ws.deliver({
+        type: 'session',
+        session_id: 's-live',
+        state: 0,
+        previous: 30,
+        timestamp: '2026-07-24T00:00:01+00:00',
+      })
+    })
+    expect(result.current.sessions['s-live']).toBeUndefined()
   })
 })
