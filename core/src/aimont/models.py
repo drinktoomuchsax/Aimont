@@ -74,10 +74,12 @@ class EventPayload(BaseModel):
     """Standardized input schema for all agent event sources.
 
     version: schema version for forward compatibility. Receivers should
-    accept payloads with version <= their supported max.
+    accept payloads with version <= their supported max. Schema versions
+    start at 1; 0 or negative is rejected (422) rather than silently
+    treated as a valid-but-ancient payload.
     """
 
-    version: int = EVENT_PAYLOAD_VERSION
+    version: int = Field(default=EVENT_PAYLOAD_VERSION, ge=1)
     event: HookEvent
     session_id: str = DEFAULT_SESSION_ID
     agent_kind: str = DEFAULT_AGENT_KIND
