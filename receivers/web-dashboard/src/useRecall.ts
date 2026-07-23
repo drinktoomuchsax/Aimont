@@ -23,6 +23,9 @@ export function useRecall() {
   const [connected, setConnected] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectRef = useRef<ReturnType<typeof setTimeout>>()
+  // Reconnect backoff: start at 1s, double up to 30s, reset on a good open.
+  // A fixed short interval would hammer a down daemon from every open tab.
+  const backoffRef = useRef(1000)
 
   const connect = useCallback(() => {
     const ws = new WebSocket(WS_URL)
@@ -30,6 +33,7 @@ export function useRecall() {
 
     ws.onopen = () => {
       setConnected(true)
+      backoffRef.current = 1000 // reset backoff on a successful connection
       // Fetch initial state
       fetch(`${API_BASE}/sessions`)
         .then(r => r.json())
@@ -117,7 +121,9 @@ export function useRecall() {
 
     ws.onclose = () => {
       setConnected(false)
-      reconnectRef.current = setTimeout(connect, 2000)
+      const delay = backoffRef.current
+      backoffRef.current = Math.min(delay * 2, 30000)
+      reconnectRef.current = setTimeout(connect, delay)
     }
 
     ws.onerror = () => ws.close()
