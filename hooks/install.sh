@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Install Aimont hooks into Claude Code settings.
+# Install Aimont hooks for Claude Code.
+#
+# Copies emit.py to ~/.aimont/hooks/ and prints the hook config to add to
+# your Claude Code settings. The argument only selects which settings-file
+# path is named in that printed instruction (the file is not modified).
 #
 # Usage:
-#   ./install.sh                      # prints path to project .claude/settings.json
-#   ./install.sh --global             # prints path to ~/.claude/settings.json
-#   ./install.sh <settings-path>      # prints the given path
+#   ./install.sh                      # references project .claude/settings.json
+#   ./install.sh --global             # references ~/.claude/settings.json
+#   ./install.sh <settings-path>      # references the given path
 #   ./install.sh --global <path>      # --global still just selects ~/.claude
 
 set -euo pipefail
