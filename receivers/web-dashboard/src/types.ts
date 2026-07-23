@@ -67,6 +67,16 @@ export interface AggregateState {
   breakdown: Record<string, number>
 }
 
+export interface HostPresence {
+  hostId: string
+  displayName?: string
+  status: 'online' | 'offline'
+  // ms since the host was last active, when known (offline frames from a
+  // disconnected /ingest peer). null/undefined otherwise.
+  lastActiveAgoMs?: number | null
+  lastChange: Date
+}
+
 export const STATE_COLORS: Record<string, string> = {
   off: '#333333',
   idle: '#2d5a3a',
