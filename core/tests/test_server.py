@@ -15,6 +15,31 @@ async def client():
 
 
 @pytest.mark.asyncio
+async def test_health_returns_ok(client):
+    """Liveness probe for orchestrators — must be a plain 200 with no
+    dependency on registry state or locks."""
+    r = await client.get("/health")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_health_does_not_touch_registry_lock(client):
+    """The probe must stay responsive even while the registry lock is held by
+    a long-running operation. Grab the lock and confirm /health still answers
+    (whereas /state, which acquires it, would block)."""
+    import asyncio
+
+    from aimont.server import get_app_instance, api as _api
+
+    app = get_app_instance(_api)
+    async with app.registry._lock:
+        r = await asyncio.wait_for(client.get("/health"), timeout=1.0)
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
 async def test_post_event_triggers_state_change(client):
     r = await client.post("/events", json={"event": "UserPromptSubmit", "session_id": "t1"})
     assert r.status_code == 200
