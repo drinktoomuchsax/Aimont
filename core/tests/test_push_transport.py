@@ -320,6 +320,65 @@ async def test_stop_without_start_is_safe():
     await t.stop()
 
 
+async def test_backoff_escalates_when_connection_drops_immediately(monkeypatch):
+    """A handshake that succeeds then drops instantly must NOT reset the
+    backoff — otherwise a permanently-rejecting upstream (expired token,
+    disabled /ingest, policy close) gets hammered once per _MIN_BACKOFF_SEC
+    forever instead of backing off exponentially."""
+    import aimont.transports.push as push_mod
+
+    monkeypatch.setattr(push_mod, "_STABLE_CONNECTION_SEC", 10.0)
+
+    t = PushTransport(
+        name="push",
+        options={
+            "upstream_url": "ws://127.0.0.1:1",
+            "host_identity": HostIdentity(host_id="h1"),
+        },
+    )
+
+    class _InstantCloseWS:
+        """A connection that opens, then wait_closed() returns immediately."""
+
+        async def wait_closed(self):
+            return
+
+    class _CtxMgr:
+        async def __aenter__(self):
+            return _InstantCloseWS()
+
+        async def __aexit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(t, "_open_connection", lambda: _CtxMgr())
+
+    async def _noop_hello(ws):
+        return
+
+    monkeypatch.setattr(t, "_send_hello", _noop_hello)
+
+    # Capture each backoff value, then stop the loop after a few iterations.
+    seen: list[float] = []
+
+    async def fake_wait_for(coro, timeout):
+        # Close the awaitable we were handed (the _stopped.wait()) to avoid
+        # a "coroutine was never awaited" warning.
+        coro.close()
+        seen.append(timeout)
+        if len(seen) >= 4:
+            t._stopped.set()
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr(push_mod.asyncio, "wait_for", fake_wait_for)
+
+    await t._connect_loop()
+
+    # Backoff must strictly escalate (1, 2, 4, 8, ...), not stay pinned at min.
+    assert seen[0] == push_mod._MIN_BACKOFF_SEC
+    assert seen == sorted(seen)
+    assert seen[-1] > seen[0], f"backoff never escalated: {seen}"
+
+
 async def test_missing_host_identity_disables_transport(fake_upstream):
     """Without host_identity, transport refuses to connect (safe default)."""
     t = PushTransport(
