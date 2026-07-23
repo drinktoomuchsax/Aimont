@@ -322,6 +322,21 @@ async def test_offline_presence_on_disconnect():
             assert offline["type"] == "presence"
             assert offline["status"] == "offline"
             assert offline["host"]["host_id"] == "downstream"
+            # The offline frame reports how long since we last heard from the
+            # peer — populated (>= 0) now, not null.
+            assert isinstance(offline["last_active_ago_ms"], int)
+            assert offline["last_active_ago_ms"] >= 0
+
+
+async def test_online_presence_has_null_last_active():
+    cfg = _default_config(ingest_enabled=True)
+    async with _running_daemon(cfg) as (_, base):
+        async with websockets.connect(f"{base}/ws?mode=all") as viewer:
+            async with websockets.connect(f"{base}/ingest") as ingest_ws:
+                await ingest_ws.send(json.dumps({"type": "hello", "host": {"host_id": "d2"}}))
+                online = json.loads(await asyncio.wait_for(viewer.recv(), 2.0))
+                assert online["status"] == "online"
+                assert online["last_active_ago_ms"] is None
 
 
 async def test_malformed_hello_closes_connection():

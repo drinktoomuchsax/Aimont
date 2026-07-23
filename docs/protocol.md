@@ -181,7 +181,7 @@ Presence frames are delivered to `/ws` subscribers in `mode=all` and are propaga
 | `message_id` | string | UUID, unique per frame. |
 | `host` | object | Which host this presence event is about. Required. |
 | `status` | string | `"online"` or `"offline"` |
-| `last_active_ago_ms` | integer \| null | Reserved for "ms since last activity" on offline frames. **Not yet populated by any daemon — currently always `null`.** Receivers must not depend on it being set. |
+| `last_active_ago_ms` | integer \| null | On `offline` frames emitted when a downstream `/ingest` peer disconnects: milliseconds since the last frame was received from that peer. `null` on `online` frames and on a daemon's own shutdown-offline frame. Receivers should treat `null` as "unknown". |
 | `forwarded_by` | array of string | Relay chain. |
 | `timestamp` | ISO 8601 | When the event occurred. |
 
