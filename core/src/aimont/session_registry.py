@@ -80,7 +80,12 @@ class SessionRegistry:
                     previous=previous,
                     duration=sm.last_duration(),
                     triggered_by=hook_event,
-                    metadata=meta,
+                    # Snapshot: `meta` is the live object still stored in
+                    # self._metadata. A later event for this session mutates it
+                    # in place (see _merge_metadata) after the lock is released
+                    # but before this frame is serialized, which would corrupt
+                    # an already-emitted, supposedly-immutable frame.
+                    metadata=meta.model_copy(),
                     durations=sm.durations,
                     timestamp=datetime.now(timezone.utc),
                 )

@@ -131,6 +131,33 @@ async def test_cleanup_expired_frames_noop_when_nothing_expired():
 
 
 @pytest.mark.asyncio
+async def test_emitted_frame_metadata_is_snapshot(registry):
+    """A frame's metadata must be a point-in-time snapshot: a later event for
+    the same session mutates the stored SessionMetadata in place, and that must
+    not retroactively alter an already-emitted frame."""
+    first, _ = await registry.handle_transition(
+        "s1",
+        AimontState.WORKING,
+        HookEvent.USER_PROMPT_SUBMIT,
+        metadata={"model": "opus"},
+    )
+    assert first is not None
+    assert first.metadata is not None
+    assert first.metadata.model == "opus"
+
+    # A subsequent event merges new metadata into the same stored object.
+    await registry.handle_transition(
+        "s1",
+        AimontState.AWAITING_INPUT,
+        HookEvent.STOP,
+        metadata={"model": "sonnet"},
+    )
+
+    # The first frame must still reflect the value at the time it was emitted.
+    assert first.metadata.model == "opus"
+
+
+@pytest.mark.asyncio
 async def test_get_nonexistent_session_returns_none(registry):
     state = await registry.get_session_state("nonexistent")
     assert state is None
