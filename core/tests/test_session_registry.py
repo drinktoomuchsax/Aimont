@@ -106,6 +106,30 @@ async def test_cleanup_expired():
     assert "s1" not in sessions
 
 
+async def test_cleanup_expired_frames_emits_off_and_aggregate():
+    config = StatesConfig()
+    registry = SessionRegistry(config, session_timeout_sec=0.1)
+
+    await registry.handle_transition("s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
+    await asyncio.sleep(0.15)
+
+    frames, aggregate = await registry.cleanup_expired_frames()
+    assert [f.session_id for f in frames] == ["s1"]
+    assert frames[0].state == AimontState.OFF
+    assert aggregate is not None
+    assert aggregate.active_sessions == 0
+
+
+async def test_cleanup_expired_frames_noop_when_nothing_expired():
+    config = StatesConfig()
+    registry = SessionRegistry(config, session_timeout_sec=3600)
+    await registry.handle_transition("s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
+
+    frames, aggregate = await registry.cleanup_expired_frames()
+    assert frames == []
+    assert aggregate is None  # no redundant broadcast when nothing changed
+
+
 @pytest.mark.asyncio
 async def test_get_nonexistent_session_returns_none(registry):
     state = await registry.get_session_state("nonexistent")

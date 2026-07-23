@@ -242,7 +242,13 @@ class App:
         while True:
             await asyncio.sleep(300)
             try:
-                await self.registry.cleanup_expired()
+                frames, aggregate = await self.registry.cleanup_expired_frames()
+                # Tell viewers the sessions went away, instead of leaving them
+                # showing stale sessions the daemon already dropped.
+                for frame in frames:
+                    await self._broadcast_session_frame(frame)
+                if aggregate is not None:
+                    await self._broadcast_aggregate_frame(aggregate)
             except asyncio.CancelledError:
                 raise
             except Exception:

@@ -135,6 +135,16 @@ class SessionRegistry:
 
     async def cleanup_expired(self) -> list[str]:
         """Remove sessions that haven't been active within timeout. Returns removed session IDs."""
+        frames, _ = await self.cleanup_expired_frames()
+        return [f.session_id for f in frames]
+
+    async def cleanup_expired_frames(
+        self,
+    ) -> tuple[list[StateFrame], AggregateFrame | None]:
+        """Remove timed-out sessions and return the frames viewers need to see:
+        an OFF StateFrame per expired session, plus one refreshed aggregate
+        frame if anything was removed. Without broadcasting these, dashboards
+        keep showing sessions the daemon has already dropped."""
         async with self._lock:
             now = datetime.now(timezone.utc)
             expired = [
@@ -142,12 +152,30 @@ class SessionRegistry:
                 for sid, last in self._last_active.items()
                 if (now - last).total_seconds() >= self._timeout_sec
             ]
+            frames: list[StateFrame] = []
             for sid in expired:
-                del self._sessions[sid]
-                del self._last_active[sid]
-                self._metadata.pop(sid, None)
-                self._agent_kinds.pop(sid, None)
-            return expired
+                sm = self._sessions.pop(sid)
+                self._last_active.pop(sid, None)
+                meta = self._metadata.pop(sid, None)
+                agent_kind = self._agent_kinds.pop(sid, DEFAULT_AGENT_KIND)
+                previous = sm.effective_state
+                sm._apply(AimontState.OFF, previous)
+                frames.append(
+                    StateFrame(
+                        host=self._host_identity,
+                        session_id=sid,
+                        agent_kind=agent_kind,
+                        state=AimontState.OFF,
+                        previous=previous,
+                        duration=sm.last_duration(),
+                        triggered_by=HookEvent.SESSION_END,
+                        metadata=meta,
+                        durations=sm.durations,
+                        timestamp=now,
+                    )
+                )
+            aggregate = self._build_aggregate_frame() if expired else None
+            return frames, aggregate
 
     def _get_or_create(self, session_id: str, agent_kind: str) -> StateMachine:
         if session_id not in self._sessions:
