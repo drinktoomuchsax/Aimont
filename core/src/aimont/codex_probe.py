@@ -157,6 +157,9 @@ class CodexProbe:
                 last_state="idle",
             )
             # Prime cpu_percent; first call after attach always returns 0.0.
+            # Leave cpu_primed False so step 3's skip fires on this same tick —
+            # sampling now would read ~0.0 (no elapsed interval since priming).
+            # The first real measurement lands a full poll interval later.
             try:
                 proc.cpu_percent(interval=None)
                 for child in proc.children(recursive=True):
@@ -164,7 +167,6 @@ class CodexProbe:
                         child.cpu_percent(interval=None)
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         pass
-                tp.cpu_primed = True
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
             self._tracked[pid] = tp
