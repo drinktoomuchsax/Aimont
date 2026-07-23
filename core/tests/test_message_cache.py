@@ -38,6 +38,28 @@ async def test_max_size_evicts_oldest():
     assert await cache.contains("id-4") is True
 
 
+async def test_nonpositive_max_size_still_dedups():
+    """A misconfigured max_size <= 0 (reachable via an unvalidated
+    IngestConfig.dedup_max_size) must not silently disable dedup. Without
+    clamping, add() inserts then immediately pops the just-added entry, so
+    the cache stays empty and every frame reads as new — the exact
+    re-delivery storm this cache prevents."""
+    for bad in (0, -5):
+        cache = MessageIdCache(max_size=bad)
+        assert await cache.add("dup") is True
+        assert await cache.add("dup") is False, f"dedup broke with max_size={bad}"
+        assert await cache.size() == 1
+
+
+async def test_nonpositive_ttl_still_dedups():
+    """A ttl_sec <= 0 would push the expiry cutoff to now-or-later, expiring
+    every entry on the next sweep and disabling dedup. Clamp guards it."""
+    for bad in (0.0, -1.0):
+        cache = MessageIdCache(ttl_sec=bad)
+        assert await cache.add("dup") is True
+        assert await cache.add("dup") is False, f"dedup broke with ttl_sec={bad}"
+
+
 async def test_ttl_expires_entries(monkeypatch):
     cache = MessageIdCache(ttl_sec=0.01)
     await cache.add("old")
