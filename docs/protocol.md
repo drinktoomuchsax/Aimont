@@ -607,6 +607,30 @@ For push-type transports (serial, MQTT), frames are sent as compact JSON lines t
 
 Serial transports use 115200 baud, 8N1 by default.
 
+## Webhook Transport
+
+The `webhook` transport POSTs each frame as a JSON body to an external HTTP
+endpoint — the simplest way to feed state into systems that don't speak
+WebSocket (Zapier, home automation, a chat bot, a logging sink).
+
+```yaml
+transports:
+  webhook:
+    type: webhook
+    enabled: true
+    options:
+      url: "https://hooks.example.com/aimont"
+      auth_token: "optional-bearer"   # sent as Authorization: Bearer <token>
+      timeout_sec: 5                   # per-request timeout (default 5)
+```
+
+- Each session, aggregate, and presence frame is delivered as one `POST` with
+  the frame JSON as the request body and `Content-Type: application/json`.
+- **Fire-and-forget**: a slow or failing endpoint never blocks the daemon's
+  state pipeline; delivery runs in the background and errors are logged at
+  debug. `stop()` drains in-flight requests.
+- **Inert when unconfigured**: no `url` → the transport does nothing.
+
 ## Building a Receiver
 
 A receiver is any program that consumes state frames and produces a physical or digital output.

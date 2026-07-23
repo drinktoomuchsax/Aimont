@@ -14,7 +14,7 @@ Aimont is a **state broadcast middleware**: it tracks the real-time state of all
 | 💡 USB Light | 🔜 In progress | Serial push, light color follows state |
 | 📱 Phone App | 🔜 In progress | Cloud relay push to Flutter app |
 | 🏠 Smart Home | 🔜 Planned | MQTT / Home Assistant / WLED |
-| 🔗 Webhook | 🔜 Planned | HTTP push to any external system |
+| 🔗 Webhook | ✅ Done | HTTP POST state frames to any external system (see [protocol.md](docs/protocol.md#webhook-transport)) |
 
 **The core does one thing: compute state, broadcast state.** How to display it is entirely up to the receiver.
 
