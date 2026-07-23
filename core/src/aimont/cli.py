@@ -44,6 +44,51 @@ STATE_ICONS = {
 }
 
 
+def _state_name(value) -> str:
+    """Render a state that may arrive as an int (enum value) or a name."""
+    if isinstance(value, int):
+        from aimont.models import AimontState
+
+        return AimontState(value).name.lower()
+    return str(value)
+
+
+def format_watch_frame(frame: dict) -> str:
+    """Format a frame for the `aimont watch` CLI. Handles session, aggregate,
+    and presence frame types (presence arrives in mode=all)."""
+    from datetime import datetime
+
+    ts = frame.get("timestamp", "")
+    if ts:
+        try:
+            ts = datetime.fromisoformat(ts).strftime("%H:%M:%S")
+        except ValueError:
+            pass
+
+    ftype = frame.get("type")
+    if ftype == "presence":
+        # Host online/offline announcement — no session_id/state, so render it
+        # distinctly instead of printing a session line with empty fields.
+        host = frame.get("host") or {}
+        host_label = host.get("display_name") or host.get("host_id") or "?"
+        status = frame.get("status", "?")
+        dot = "🟢" if status == "online" else "⚫"
+        return f"  {ts}  {dot} host {host_label}: {status}"
+    if ftype == "aggregate":
+        state = _state_name(frame.get("state", ""))
+        icon = STATE_ICONS.get(state, "  ")
+        sessions = frame.get("active_sessions", 0)
+        breakdown = frame.get("breakdown", {})
+        return f"  {ts}  {icon} {state}  ({sessions} sessions: {breakdown})"
+    # session frame (default)
+    state = _state_name(frame.get("state", ""))
+    icon = STATE_ICONS.get(state, "  ")
+    sid = frame.get("session_id", "?")
+    kind = frame.get("agent_kind", "claude")
+    prev = _state_name(frame.get("previous", ""))
+    return f"  {ts}  {icon} [{kind}:{sid}] {prev} → {state}"
+
+
 @app.command()
 def daemon(
     host: str = typer.Option("127.0.0.1", help="Bind address"),
@@ -109,7 +154,6 @@ def watch(
     """Watch state changes in real-time."""
     import asyncio
     import json
-    from datetime import datetime
 
     import websockets
 
@@ -124,47 +168,12 @@ def watch(
                 typer.echo("Connected. Watching state changes (Ctrl+C to stop):\n")
                 async for message in ws:
                     frame = json.loads(message)
-                    _print_frame(frame)
+                    typer.echo(format_watch_frame(frame))
         except ConnectionRefusedError:
             typer.echo("Daemon is not running.", err=True)
             raise typer.Exit(1)
         except KeyboardInterrupt:
             pass
-
-    def _print_frame(frame: dict):
-        ts = frame.get("timestamp", "")
-        if ts:
-            try:
-                dt = datetime.fromisoformat(ts)
-                ts = dt.strftime("%H:%M:%S")
-            except ValueError:
-                pass
-
-        if frame.get("type") == "aggregate":
-            state = frame["state"]
-            if isinstance(state, int):
-                from aimont.models import AimontState
-
-                state = AimontState(state).name.lower()
-            icon = STATE_ICONS.get(state, "  ")
-            sessions = frame.get("active_sessions", 0)
-            breakdown = frame.get("breakdown", {})
-            typer.echo(f"  {ts}  {icon} {state}  ({sessions} sessions: {breakdown})")
-        else:
-            state = frame.get("state", "")
-            if isinstance(state, int):
-                from aimont.models import AimontState
-
-                state = AimontState(state).name.lower()
-            icon = STATE_ICONS.get(state, "  ")
-            sid = frame.get("session_id", "?")
-            kind = frame.get("agent_kind", "claude")
-            prev = frame.get("previous", "")
-            if isinstance(prev, int):
-                from aimont.models import AimontState
-
-                prev = AimontState(prev).name.lower()
-            typer.echo(f"  {ts}  {icon} [{kind}:{sid}] {prev} → {state}")
 
     asyncio.run(_watch())
 
