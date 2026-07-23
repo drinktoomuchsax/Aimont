@@ -127,6 +127,63 @@ async def test_invalid_url_scheme_disables_transport(caplog):
     await t.stop()
 
 
+async def test_pending_set_is_bounded_and_sheds_load():
+    """A slow endpoint must not let the in-flight POST set grow without bound;
+    once max_pending is reached, new frames are dropped."""
+    gate = asyncio.Event()
+
+    class SlowClient(_FakeClient):
+        async def post(self, url, content=None):
+            await gate.wait()  # hang until released
+            await super().post(url, content)
+
+    t = WebhookTransport("webhook", {"url": "http://example.test/hook", "max_pending": 3})
+    await t.start()
+    t._client = SlowClient()
+
+    # Fire more frames than the cap while all POSTs are hung.
+    for _ in range(10):
+        await t.send(_state_frame())
+
+    assert len(t._pending) == 3
+    assert t._dropped == 7
+
+    # Release the hung POSTs and let them drain.
+    gate.set()
+    await asyncio.gather(*t._pending, return_exceptions=True)
+    await t.stop()
+
+
+async def test_stop_rejects_posts_issued_mid_drain():
+    """A frame broadcast while stop() is draining in-flight POSTs (client still
+    open) must not spawn a task that escapes the drain and races aclose()."""
+    drain_started = asyncio.Event()
+    release = asyncio.Event()
+
+    class SlowClient(_FakeClient):
+        async def post(self, url, content=None):
+            drain_started.set()
+            await release.wait()
+            await super().post(url, content)
+
+    t = WebhookTransport("webhook", {"url": "http://example.test/hook"})
+    await t.start()
+    t._client = SlowClient()
+
+    await t.send(_state_frame())  # one in-flight POST, now hung
+    stop_task = asyncio.create_task(t.stop())
+    await drain_started.wait()  # stop() is now awaiting the gather
+
+    # Broadcast arrives mid-shutdown: client is still open (aclose not reached).
+    assert t._client is not None
+    await t.send(_state_frame())
+    assert len(t._pending) == 1  # rejected — did NOT spawn a second task
+
+    release.set()
+    await stop_task
+    assert t._client is None
+
+
 async def test_valid_https_url_builds_client():
     t = WebhookTransport("webhook", {"url": "https://hooks.example.com/aimont"})
     await t.start()
