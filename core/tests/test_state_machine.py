@@ -99,6 +99,38 @@ async def test_effective_state_degrades_after_ttl(fast_ttl_config):
 
 
 @pytest.mark.asyncio
+async def test_durations_split_at_ttl_boundary(fast_ttl_config):
+    """Once a state's TTL expires it degrades (effective_state reflects this),
+    so time past the TTL must be charged to the degrade target, not left piling
+    up on the un-degraded current state."""
+    sm = StateMachine(fast_ttl_config)
+
+    await sm.transition(AimontState.WORKING)  # ttl 0.1s, degrades to awaiting_input
+    await asyncio.sleep(0.3)
+
+    d = sm.durations
+    # ~0.1s charged to working (the TTL cap), the rest to awaiting_input.
+    assert d.working == pytest.approx(0.1, abs=0.05)
+    assert d.awaiting_input >= 0.1
+    assert d.working + d.awaiting_input == pytest.approx(0.3, abs=0.05)
+
+
+@pytest.mark.asyncio
+async def test_apply_charges_post_ttl_time_to_degrade_target(fast_ttl_config):
+    """A real transition after the TTL commits the split into cumulative
+    durations, matching what effective_state reported all along."""
+    sm = StateMachine(fast_ttl_config)
+
+    await sm.transition(AimontState.WORKING)
+    await asyncio.sleep(0.3)
+    await sm.transition(AimontState.ERROR)  # forces commit of the working period
+
+    d = sm.durations
+    assert d.working == pytest.approx(0.1, abs=0.05)
+    assert d.awaiting_input == pytest.approx(0.2, abs=0.05)
+
+
+@pytest.mark.asyncio
 async def test_full_priority_ladder(default_config):
     sm = StateMachine(default_config)
 
