@@ -84,6 +84,19 @@ async def test_versioned_event_blank_session_id_uses_default(client):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("bad_version", [0, -1])
+async def test_versioned_event_rejects_nonpositive_version(client, bad_version):
+    """Schema versions start at 1. A version of 0 or negative is nonsensical
+    and must be rejected (422), not accepted as a valid-but-ancient payload."""
+    r = await client.post(
+        "/events",
+        json={"version": bad_version, "event": "UserPromptSubmit", "session_id": "v0"},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"] == "invalid_payload"
+
+
+@pytest.mark.asyncio
 async def test_get_state_returns_aggregate(client):
     await client.post("/events", json={"event": "UserPromptSubmit", "session_id": "s1"})
     await client.post("/events", json={"event": "PermissionRequest", "session_id": "s2"})
