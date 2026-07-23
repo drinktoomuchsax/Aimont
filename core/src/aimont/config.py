@@ -10,11 +10,25 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator
 
 from aimont.auth import AimontToken, TokenDecodeError, decode_token
+from aimont.models import AimontState
 
 logger = logging.getLogger(__name__)
+
+# Valid state names for config fields that name a state (rule targets, TTL
+# degrade targets). Kept here so a typo fails fast at config-load time with a
+# ConfigError, rather than crashing later with an opaque KeyError when
+# state_from_name() does an unguarded dict lookup.
+_STATE_NAMES = frozenset(s.name.lower() for s in AimontState)
+
+
+def _validate_state_name(value: str, field: str) -> str:
+    if value.lower() not in _STATE_NAMES:
+        valid = ", ".join(sorted(_STATE_NAMES))
+        raise ValueError(f"{field} must be one of: {valid} (got {value!r})")
+    return value
 
 
 class ConfigError(Exception):
@@ -77,6 +91,11 @@ class StateTTL(BaseModel):
     ttl_sec: float
     degrade_to: str
 
+    @field_validator("degrade_to")
+    @classmethod
+    def _check_degrade_to(cls, v: str) -> str:
+        return _validate_state_name(v, "degrade_to")
+
 
 class StatesConfig(BaseModel):
     error: StateTTL = StateTTL(ttl_sec=30.0, degrade_to="awaiting_input")
@@ -99,6 +118,11 @@ class RuleConfig(BaseModel):
     state: str
     debounce_ms: int = 0
     force: bool = False
+
+    @field_validator("state")
+    @classmethod
+    def _check_state(cls, v: str) -> str:
+        return _validate_state_name(v, "state")
 
 
 class IngestConfig(BaseModel):
