@@ -6,6 +6,7 @@ import asyncio
 import hmac
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
@@ -451,6 +452,7 @@ async def _handle_ingest(fastapi_app: FastAPI, ws: WebSocket) -> None:
     await ws.accept()
 
     peer_host: HostIdentity | None = None
+    last_activity: float | None = None
     try:
         hello_raw = await ws.receive_text()
         try:
@@ -477,9 +479,15 @@ async def _handle_ingest(fastapi_app: FastAPI, ws: WebSocket) -> None:
         )
         await app.ingest_relay_frame(online_frame)
 
+        # Track when we last heard from the peer so the offline frame can
+        # report how stale the host's data is. monotonic() is immune to
+        # wall-clock adjustments.
+        last_activity = time.monotonic()
+
         # Main loop: receive frames until the peer disconnects.
         while True:
             raw = await ws.receive_text()
+            last_activity = time.monotonic()
             frame = _parse_ingest_frame(raw)
             if frame is None:
                 # Unknown or malformed — skip but keep the connection open.
@@ -492,9 +500,13 @@ async def _handle_ingest(fastapi_app: FastAPI, ws: WebSocket) -> None:
         # Best-effort offline announcement on behalf of the peer.
         if peer_host is not None:
             try:
+                ago_ms = None
+                if last_activity is not None:
+                    ago_ms = max(0, int((time.monotonic() - last_activity) * 1000))
                 offline_frame = PresenceFrame(
                     host=peer_host,
                     status="offline",
+                    last_active_ago_ms=ago_ms,
                     timestamp=datetime.now(timezone.utc),
                 )
                 await app.ingest_relay_frame(offline_frame)
