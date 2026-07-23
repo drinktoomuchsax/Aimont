@@ -1,11 +1,26 @@
 """Tests for the priority-based state machine."""
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from aimont.models import AimontState
 from aimont.state_machine import StateMachine
+
+
+class _FrozenDatetime:
+    """Minimal datetime stand-in whose now() returns a settable instant, so a
+    test can step the wall clock backward without touching real time."""
+
+    now_value: datetime
+
+    def __init__(self, initial):
+        _FrozenDatetime.now_value = initial
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.now_value
 
 
 @pytest.mark.asyncio
@@ -128,6 +143,31 @@ async def test_apply_charges_post_ttl_time_to_degrade_target(fast_ttl_config):
     d = sm.durations
     assert d.working == pytest.approx(0.1, abs=0.05)
     assert d.awaiting_input == pytest.approx(0.2, abs=0.05)
+
+
+@pytest.mark.asyncio
+async def test_backward_clock_never_yields_negative_durations(default_config, monkeypatch):
+    """A backward wall-clock step (NTP/VM correction) between _set_at and a read
+    must not produce negative durations. elapsed is clamped to >= 0, so the
+    cumulative duration and the emitted last_duration stay non-negative."""
+    import aimont.state_machine as sm_mod
+
+    base = datetime(2026, 7, 24, 0, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(sm_mod, "datetime", _FrozenDatetime(base))
+
+    sm = StateMachine(default_config)
+    await sm.transition(AimontState.WORKING)
+
+    # Clock steps backward 5s after the state was set.
+    _FrozenDatetime.now_value = base - timedelta(seconds=5)
+
+    d = sm.durations
+    assert d.working >= 0.0  # clamped, not -5.0
+
+    # A transition under the backward clock must not charge negative time.
+    await sm.transition(AimontState.ERROR)
+    assert sm.last_duration() >= 0.0
+    assert sm.durations.working >= 0.0
 
 
 @pytest.mark.asyncio
