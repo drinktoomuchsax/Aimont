@@ -111,3 +111,24 @@ async def test_failing_post_is_swallowed():
     # Must not raise even though the POST fails.
     await asyncio.gather(*t._pending, return_exceptions=True)
     await t.stop()
+
+
+async def test_invalid_url_scheme_disables_transport(caplog):
+    import logging
+
+    t = WebhookTransport("webhook", {"url": "example.com/hook"})  # no scheme
+    with caplog.at_level(logging.WARNING):
+        await t.start()
+    assert t._client is None  # stayed inert
+    assert t._url is None
+    assert any("invalid url" in r.message for r in caplog.records)
+    # send is a safe no-op when disabled
+    await t.send(_state_frame())
+    await t.stop()
+
+
+async def test_valid_https_url_builds_client():
+    t = WebhookTransport("webhook", {"url": "https://hooks.example.com/aimont"})
+    await t.start()
+    assert t._client is not None
+    await t.stop()
