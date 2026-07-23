@@ -30,6 +30,15 @@ jobs:
   pytest:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # Test the minimum supported version (requires-python = ">=3.11")
+        # and the current default, so 3.11-only breakage can't slip through.
+        python-version: ["3.11", "3.12"]
+    env:
+      # Make every uv command in this job use the matrix interpreter.
+      UV_PYTHON: ${{ matrix.python-version }}
 
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +55,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: uv sync
