@@ -119,7 +119,7 @@ class App:
             await t.stop()
 
     async def handle_event(self, payload: EventPayload) -> dict:
-        result = self.rules.resolve(payload.event)
+        result = self.rules.resolve(payload.event, payload.session_id)
         if not isinstance(result, RuleResult):
             # DEBOUNCED sentinel = a rule matched but is throttled; None = no
             # rule maps this event at all. Report them distinctly.
