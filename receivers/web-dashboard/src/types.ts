@@ -82,14 +82,19 @@ export interface HostPresence {
 
 /** Format a duration in seconds as a compact human label (e.g. 5s, 3m20s, 2h5m). */
 export function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${Math.round(seconds)}s`
-  if (seconds < 3600) {
-    const m = Math.floor(seconds / 60)
-    const s = Math.round(seconds % 60)
+  // Round to whole seconds up front, then decompose. Rounding the remainder
+  // per-branch instead lets a fractional value like 59.6 pick the <60 branch
+  // yet render "60s", or 3599.6 render "59m60s" — the carry must happen before
+  // the unit is chosen, not after.
+  const total = Math.max(0, Math.round(seconds))
+  if (total < 60) return `${total}s`
+  if (total < 3600) {
+    const m = Math.floor(total / 60)
+    const s = total % 60
     return s > 0 ? `${m}m${s}s` : `${m}m`
   }
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
   return m > 0 ? `${h}h${m}m` : `${h}h`
 }
 

@@ -16,6 +16,18 @@ describe('formatDuration', () => {
     expect(formatDuration(7200)).toBe('2h')
     expect(formatDuration(7500)).toBe('2h5m')
   })
+
+  it('carries a rounded remainder into the next unit instead of rendering 60', () => {
+    // Fractional seconds must round BEFORE the unit is chosen — otherwise
+    // 59.6 renders "60s" and 3599.6 renders "59m60s".
+    expect(formatDuration(59.6)).toBe('1m')
+    expect(formatDuration(3599.6)).toBe('1h')
+    expect(formatDuration(119.6)).toBe('2m')
+  })
+
+  it('clamps negative input to 0s', () => {
+    expect(formatDuration(-5)).toBe('0s')
+  })
 })
 
 describe('formatToolLine', () => {
