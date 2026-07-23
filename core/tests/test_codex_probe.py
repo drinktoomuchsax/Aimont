@@ -115,6 +115,34 @@ def test_busy_cpu_emits_user_prompt_submit(probe, captured_posts):
     assert probe._tracked[3333].last_state == "working"
 
 
+def test_discovery_tick_does_not_sample_cpu(probe, captured_posts):
+    """The discovery tick primes cpu_percent but must NOT sample it in the same
+    tick — a sample taken microseconds after priming reads ~0.0 (no elapsed
+    interval). _sum_cpu must first be consulted on the following tick, so a
+    process that is already busy at discovery isn't misread as idle-then-late."""
+    proc = FakeProc(pid=7777)
+    calls = {"n": 0}
+
+    def counting_sum_cpu(p):
+        calls["n"] += 1
+        return 80.0
+
+    with (
+        patch.object(codex_probe, "_is_codex_cli", return_value=True),
+        patch.object(codex_probe.psutil, "process_iter", return_value=[proc]),
+        patch.object(codex_probe, "_sum_cpu", counting_sum_cpu),
+    ):
+        probe.tick()  # discover + prime — must not call _sum_cpu
+        assert calls["n"] == 0, "CPU sampled on the discovery tick (priming is a no-op read)"
+
+        probe.tick()  # now the first real sample happens -> working
+    assert calls["n"] == 1
+    assert captured_posts[-1] == {
+        "event": "UserPromptSubmit",
+        "session_id": "codex-7777-1000000",
+    }
+
+
 def test_idle_emits_stop_after_quiet_window(probe, captured_posts):
     proc = FakeProc(pid=4444)
     with (
