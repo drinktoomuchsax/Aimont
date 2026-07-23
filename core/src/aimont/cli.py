@@ -294,9 +294,19 @@ def join(
         )
         raise typer.Exit(1)
 
-    TOKEN_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    TOKEN_FILE_PATH.write_text(token + "\n", encoding="utf-8")
-    # 0600 — token is a credential; don't let other local users read it.
+    import os
+
+    # The token is a credential. Create the file with 0600 from the start via
+    # os.open — writing then chmod'ing leaves a window where the secret exists
+    # world-readable under the process umask, which a local attacker can read.
+    TOKEN_FILE_PATH.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(TOKEN_FILE_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, (token + "\n").encode("utf-8"))
+    finally:
+        os.close(fd)
+    # O_CREAT honors the mode only when the file is new; force 0600 in case an
+    # existing (--force overwrite) file had looser perms.
     TOKEN_FILE_PATH.chmod(0o600)
 
     typer.echo(f"✓ Joined {bundle.issuer or bundle.upstream_url}")

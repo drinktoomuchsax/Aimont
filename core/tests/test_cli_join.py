@@ -118,6 +118,21 @@ def test_join_uses_restrictive_permissions(runner, token_home):
     assert mode == 0o600, f"expected 0o600, got {oct(mode)}"
 
 
+def test_join_creates_token_file_atomically_0600(runner, token_home, monkeypatch):
+    """The secret must never touch disk world-readable. With the trailing
+    chmod neutralized, the file must STILL be 0600 — proving it was created
+    with restrictive perms, not fixed up after a world-readable write."""
+    import os
+
+    monkeypatch.setattr(os, "chmod", lambda *a, **k: None)
+
+    token = _make_token()
+    result = runner.invoke(app, ["join", token])
+    assert result.exit_code == 0
+    mode = token_home.stat().st_mode & 0o777
+    assert mode == 0o600, f"file was not created 0600 (got {oct(mode)})"
+
+
 # ---- leave ---------------------------------------------------------------
 
 
