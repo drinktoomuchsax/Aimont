@@ -305,7 +305,13 @@ curl -s http://localhost:8765/state | jq .active_sessions
 curl -s http://localhost:8765/sessions | jq
 ```
 
-No built-in Prometheus metrics today — you can infer health from `/state` polling, and from HTTP 4xx/5xx on `/ingest` (Cloudflare logs them at the tunnel edge).
+For liveness/readiness checks (orchestrators, load balancers), poll `GET /health`, which returns `{"status": "ok"}` and touches no registry lock:
+
+```bash
+curl -s http://localhost:8765/health | jq
+```
+
+No built-in Prometheus metrics today — beyond `/health` you can infer richer state from `/state` polling, and spot ingest problems from HTTP 4xx/5xx on `/ingest` (Cloudflare logs them at the tunnel edge).
 
 ---
 

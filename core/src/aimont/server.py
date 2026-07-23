@@ -314,6 +314,17 @@ def create_api(app_obj: App | None = None) -> FastAPI:
     """
     fastapi_app = FastAPI(title="Aimont", lifespan=lifespan)
 
+    @fastapi_app.get("/health")
+    async def get_health():
+        """Liveness probe for orchestrators / load balancers.
+
+        Deliberately touches no lock and no registry state so it stays
+        responsive even while real traffic holds the registry lock. /state is
+        not a substitute — it acquires that lock, so a probe pointed at it can
+        block behind a burst of events.
+        """
+        return {"status": "ok"}
+
     @fastapi_app.post("/events")
     async def post_event(request_body: dict[str, Any]):
         app = get_app_instance(fastapi_app)
