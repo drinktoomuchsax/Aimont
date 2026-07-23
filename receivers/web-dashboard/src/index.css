@@ -35,6 +35,32 @@ body {
 .topbar-conn { color: #e85d5d; font-size: 12px; }
 .topbar-conn.on { color: #4ec970; }
 
+/* ===== Host presence strip ===== */
+.hostbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  margin-bottom: 12px;
+  background: #0d0d14;
+  border: 1px solid #1e1e2a;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.host {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.host-dot { color: #e85d5d; }
+.host.online .host-dot { color: #4ec970; }
+.host-name { color: #999; }
+.host.offline .host-name { color: #555; }
+.host-seen { color: #444; }
+
 /* ===== Panels container ===== */
 .panels {
   display: flex;

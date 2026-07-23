@@ -77,6 +77,18 @@ export interface HostPresence {
   lastChange: Date
 }
 
+/** Human-readable "last seen" label from a millisecond age, or null if unknown. */
+export function formatLastSeen(ms?: number | null): string | null {
+  if (ms == null || ms < 0) return null
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
 export const STATE_COLORS: Record<string, string> = {
   off: '#333333',
   idle: '#2d5a3a',
