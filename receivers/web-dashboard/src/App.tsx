@@ -15,7 +15,7 @@ function App() {
         <span className="topbar-sep">│</span>
         <span className="topbar-agg">{STATE_DISPLAY[aggregate.state] ?? aggregate.state}</span>
         <span className="topbar-sep">│</span>
-        <span className="topbar-count">{aggregate.activeSessions} sessions</span>
+        <span className="topbar-count">{aggregate.activeSessions ?? 0} session{aggregate.activeSessions === 1 ? '' : 's'}</span>
         <span className="topbar-spacer" />
         <span className={`topbar-conn ${connected ? 'on' : ''}`}>
           {connected ? '● connected' : '○ reconnecting'}
