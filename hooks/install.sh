@@ -1,16 +1,27 @@
 #!/usr/bin/env bash
 # Install Aimont hooks into Claude Code settings.
-# Usage: ./install.sh [--global]
+#
+# Usage:
+#   ./install.sh                      # prints path to project .claude/settings.json
+#   ./install.sh --global             # prints path to ~/.claude/settings.json
+#   ./install.sh <settings-path>      # prints the given path
+#   ./install.sh --global <path>      # --global still just selects ~/.claude
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 EMIT_SCRIPT="$SCRIPT_DIR/emit.py"
 
-if [ "$1" = "--global" ]; then
+if [ ! -f "$EMIT_SCRIPT" ]; then
+    echo "error: emit.py not found next to install.sh ($EMIT_SCRIPT)" >&2
+    exit 1
+fi
+
+if [ "${1:-}" = "--global" ]; then
     SETTINGS_FILE="$HOME/.claude/settings.json"
 else
-    SETTINGS_FILE="${2:-.claude/settings.json}"
+    # First positional arg (when not --global) is an optional settings path.
+    SETTINGS_FILE="${1:-.claude/settings.json}"
 fi
 
 INSTALL_DIR="$HOME/.aimont/hooks"
