@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from aimont.auth import AimontToken, TokenDecodeError, decode_token
 from aimont.models import AimontState
@@ -45,7 +45,7 @@ TOKEN_FILE_PATH = Path.home() / ".config" / "aimont" / "token"
 
 class ServerConfig(BaseModel):
     host: str = "127.0.0.1"
-    port: int = 8765
+    port: int = Field(default=8765, ge=1, le=65535)
 
 
 class HostConfig(BaseModel):

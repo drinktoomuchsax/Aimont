@@ -36,6 +36,18 @@ def _exit_daemon_unreachable(exc: Exception) -> None:
     raise typer.Exit(1)
 
 
+def _validate_port(value: int) -> int:
+    """Reject out-of-range TCP ports before they reach uvicorn/httpx.
+
+    A port outside 1..65535 (e.g. 0, 99999, negative) otherwise surfaces as an
+    opaque uvicorn OverflowError/OSError or a malformed httpx URL. Fail with a
+    clean exit-2, matching how --log-level / --mode reject bad values.
+    """
+    if not 1 <= value <= 65535:
+        raise typer.BadParameter(f"port must be between 1 and 65535 (got {value})")
+    return value
+
+
 def _version_callback(value: bool) -> None:
     if value:
         from aimont import __version__
@@ -118,7 +130,7 @@ def format_watch_frame(frame: dict) -> str:
 @app.command()
 def daemon(
     host: str = typer.Option("127.0.0.1", help="Bind address"),
-    port: int = typer.Option(8765, help="Bind port"),
+    port: int = typer.Option(8765, help="Bind port", callback=_validate_port),
     config: Path | None = typer.Option(None, help="Config file path"),
     log_level: str = typer.Option(
         "info",
@@ -155,7 +167,7 @@ def daemon(
 
 @app.command()
 def status(
-    port: int = typer.Option(8765, help="Daemon port"),
+    port: int = typer.Option(8765, help="Daemon port", callback=_validate_port),
 ):
     """Show current daemon state."""
     import httpx
@@ -178,7 +190,7 @@ def watch(
     session_id: str | None = typer.Option(
         None, "--session", "-s", help="Session ID (for mode=session)"
     ),
-    port: int = typer.Option(8765, help="Daemon port"),
+    port: int = typer.Option(8765, help="Daemon port", callback=_validate_port),
 ):
     """Watch state changes in real-time."""
     import asyncio
@@ -227,7 +239,7 @@ def watch(
 
 @app.command()
 def sessions(
-    port: int = typer.Option(8765, help="Daemon port"),
+    port: int = typer.Option(8765, help="Daemon port", callback=_validate_port),
 ):
     """List all active sessions."""
     import httpx
@@ -252,7 +264,7 @@ def sessions(
 
 @app.command(name="codex-probe")
 def codex_probe(
-    port: int = typer.Option(8765, help="Daemon port"),
+    port: int = typer.Option(8765, help="Daemon port", callback=_validate_port),
     poll: float = typer.Option(2.0, help="Poll interval (seconds)"),
     busy_cpu: float = typer.Option(10.0, help="CPU%% threshold that counts as 'working'"),
     idle_after: float = typer.Option(6.0, help="Seconds of quiet CPU before emitting Stop"),
@@ -383,7 +395,7 @@ def issue(
 def test(
     state: str = typer.Argument(help="State to trigger (e.g. awaiting_input, error)"),
     session_id: str = typer.Option("test-session", "--session", "-s", help="Session ID"),
-    port: int = typer.Option(8765, help="Daemon port"),
+    port: int = typer.Option(8765, help="Daemon port", callback=_validate_port),
 ):
     """Send a synthetic event to test a state transition."""
     import httpx

@@ -55,6 +55,15 @@ def test_invalid_degrade_to_raises_config_error(tmp_path):
     assert "degrade_to" in str(ei.value)
 
 
+def test_out_of_range_port_raises_config_error(tmp_path):
+    """server.port outside 1..65535 must fail at load, not be handed to uvicorn."""
+    bad = tmp_path / "config.yaml"
+    bad.write_text("server:\n  port: 99999\n", encoding="utf-8")
+    with pytest.raises(ConfigError) as ei:
+        load_config(path=bad)
+    assert "validation" in str(ei.value)
+
+
 def test_valid_state_names_still_load(tmp_path):
     """Guard against over-eager validation: a correctly-named state/degrade_to
     (including case-insensitive) must still load."""
