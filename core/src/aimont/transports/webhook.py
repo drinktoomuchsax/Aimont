@@ -44,6 +44,21 @@ class WebhookTransport(BaseTransport):
         if not self._url:
             # No endpoint configured; transport is inert.
             return
+        # Validate the URL scheme once at startup. Without this a bad url like
+        # "example.com/hook" (no scheme) would raise on every single frame,
+        # logged only at debug — the webhook silently never works. Fail loud
+        # once and stay inert instead.
+        from urllib.parse import urlparse
+
+        parsed = urlparse(self._url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            logger.warning(
+                "webhook %s: ignoring invalid url %r (need http(s)://host); transport disabled",
+                self.name,
+                self._url,
+            )
+            self._url = None
+            return
         headers = {"Content-Type": "application/json"}
         if self._auth_token:
             headers["Authorization"] = f"Bearer {self._auth_token}"
