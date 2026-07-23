@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useRecall } from './useRecall'
+import { useRecall, reduceSessionFrame } from './useRecall'
+import type { SessionState } from './types'
 
 // Minimal fake WebSocket that lets us drive lifecycle events manually and
 // records how many instances were constructed, so we can prove that a socket
@@ -67,6 +68,104 @@ describe('useRecall WebSocket lifecycle', () => {
     // The 1s backoff reconnect should fire and open a second socket.
     vi.advanceTimersByTime(1000)
     expect(FakeWebSocket.instances).toHaveLength(2)
+  })
+})
+
+describe('reduceSessionFrame', () => {
+  const empty: Record<string, SessionState> = {}
+
+  it('inserts a new session with eventCount 1 and a one-entry history', () => {
+    const next = reduceSessionFrame(empty, {
+      session_id: 's1',
+      state: 30,
+      previous: 10,
+      timestamp: '2026-07-24T00:00:00+00:00',
+    })
+    expect(next.s1.state).toBe('working')
+    expect(next.s1.previousState).toBe('idle')
+    expect(next.s1.eventCount).toBe(1)
+    expect(next.s1.history).toHaveLength(1)
+  })
+
+  it('increments eventCount and carries previousState from the prior state', () => {
+    const a = reduceSessionFrame(empty, {
+      session_id: 's1',
+      state: 30,
+      timestamp: '2026-07-24T00:00:00+00:00',
+    })
+    const b = reduceSessionFrame(a, {
+      session_id: 's1',
+      state: 40,
+      timestamp: '2026-07-24T00:00:01+00:00',
+    })
+    expect(b.s1.state).toBe('tool_active')
+    expect(b.s1.previousState).toBe('working') // prior stored state, not frame.previous
+    expect(b.s1.eventCount).toBe(2)
+    expect(b.s1.history).toHaveLength(2)
+  })
+
+  it('preserves prior metadata/durations when a frame omits them', () => {
+    const a = reduceSessionFrame(empty, {
+      session_id: 's1',
+      state: 30,
+      metadata: { model: 'opus' },
+      durations: { off: 0, idle: 0, working: 5, tool_active: 0, awaiting_input: 0, awaiting_permission: 0, notification: 0, error: 0 },
+      timestamp: '2026-07-24T00:00:00+00:00',
+    })
+    const b = reduceSessionFrame(a, {
+      session_id: 's1',
+      state: 40,
+      timestamp: '2026-07-24T00:00:01+00:00',
+    })
+    expect(b.s1.metadata).toEqual({ model: 'opus' })
+    expect(b.s1.durations?.working).toBe(5)
+  })
+
+  it('caps history at MAX_HISTORY (500) entries', () => {
+    let acc: Record<string, SessionState> = empty
+    for (let i = 0; i < 600; i++) {
+      acc = reduceSessionFrame(acc, {
+        session_id: 's1',
+        state: 30,
+        timestamp: '2026-07-24T00:00:00+00:00',
+      })
+    }
+    expect(acc.s1.history).toHaveLength(500)
+    expect(acc.s1.eventCount).toBe(600) // eventCount is unbounded, history is not
+  })
+
+  it('deletes the session on a genuine off (code 0)', () => {
+    const a = reduceSessionFrame(empty, {
+      session_id: 's1',
+      state: 30,
+      timestamp: '2026-07-24T00:00:00+00:00',
+    })
+    const b = reduceSessionFrame(a, {
+      session_id: 's1',
+      state: 0,
+      timestamp: '2026-07-24T00:00:01+00:00',
+    })
+    expect(b.s1).toBeUndefined()
+  })
+
+  it('returns the same map reference on off for an unknown session (no-op)', () => {
+    const next = reduceSessionFrame(empty, {
+      session_id: 'ghost',
+      state: 0,
+      timestamp: '2026-07-24T00:00:00+00:00',
+    })
+    expect(next).toBe(empty) // no needless re-render churn
+  })
+
+  it('keeps a session whose state code is unknown instead of deleting it', () => {
+    const next = reduceSessionFrame(empty, {
+      session_id: 's-fwd',
+      state: 95,
+      previous: 30,
+      timestamp: '2026-07-24T00:00:00+00:00',
+    })
+    expect(next['s-fwd']).toBeDefined()
+    expect(next['s-fwd'].state).toBe('unknown')
   })
 })
 

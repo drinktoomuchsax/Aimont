@@ -18,6 +18,54 @@ function resolveState(s: number | string): string {
   return s
 }
 
+// Apply a `session` frame to the sessions map, returning the next map. Pure so
+// it can be unit-tested without the WS/React machinery. A resolved 'off' state
+// deletes the row (session ended); anything else upserts, appending to a
+// bounded history and incrementing the event count. Exported for testing.
+export function reduceSessionFrame(
+  curr: Record<string, SessionState>,
+  frame: {
+    session_id: string
+    state: number | string
+    previous?: number | string
+    timestamp?: string
+    metadata?: SessionMetadata
+    duration?: number
+    durations?: SessionState['durations']
+  },
+): Record<string, SessionState> {
+  const state = resolveState(frame.state)
+  const sid = frame.session_id
+
+  if (state === 'off') {
+    if (!(sid in curr)) return curr
+    const next = { ...curr }
+    delete next[sid]
+    return next
+  }
+
+  const prev = curr[sid]
+  const changeTime = frame.timestamp ? new Date(frame.timestamp) : new Date()
+  const history = [
+    ...(prev?.history ?? []),
+    { state, timestamp: changeTime },
+  ].slice(-MAX_HISTORY)
+  return {
+    ...curr,
+    [sid]: {
+      id: sid,
+      state,
+      previousState: prev?.state ?? resolveState(frame.previous ?? 'off'),
+      lastChange: changeTime,
+      eventCount: (prev?.eventCount ?? 0) + 1,
+      metadata: frame.metadata ?? prev?.metadata,
+      duration: frame.duration,
+      durations: frame.durations ?? prev?.durations,
+      history,
+    },
+  }
+}
+
 // Map a raw presence frame to a HostPresence entry. Exported for testing.
 export function presenceFromFrame(frame: {
   host?: { host_id?: string; display_name?: string }
@@ -119,39 +167,7 @@ export function useRecall() {
           breakdown: frame.breakdown ?? {},
         })
       } else if (frame.type === 'session') {
-        const state = resolveState(frame.state)
-        const previousState = resolveState(frame.previous)
-        const sid = frame.session_id
-
-        if (state === 'off') {
-          setSessions(curr => {
-            const next = { ...curr }
-            delete next[sid]
-            return next
-          })
-        } else {
-          setSessions(curr => {
-            const prev = curr[sid]
-            const history = [
-              ...(prev?.history ?? []),
-              { state, timestamp: new Date(frame.timestamp) },
-            ].slice(-MAX_HISTORY)
-            return {
-              ...curr,
-              [sid]: {
-                id: sid,
-                state,
-                previousState: prev?.state ?? previousState,
-                lastChange: new Date(frame.timestamp),
-                eventCount: (prev?.eventCount ?? 0) + 1,
-                metadata: frame.metadata ?? prev?.metadata,
-                duration: frame.duration,
-                durations: frame.durations ?? prev?.durations,
-                history,
-              },
-            }
-          })
-        }
+        setSessions(curr => reduceSessionFrame(curr, frame))
       }
     }
 
