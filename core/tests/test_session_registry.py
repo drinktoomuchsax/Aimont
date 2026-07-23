@@ -1,6 +1,7 @@
 """Tests for multi-session state management."""
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -118,6 +119,34 @@ async def test_cleanup_expired_frames_emits_off_and_aggregate():
     assert frames[0].state == AimontState.OFF
     assert aggregate is not None
     assert aggregate.active_sessions == 0
+
+
+@pytest.mark.asyncio
+async def test_cleanup_survives_desync_between_last_active_and_sessions():
+    """If _last_active names a session that's missing from _sessions (a
+    transient desync), cleanup must not raise KeyError mid-loop and abort —
+    leaving other sessions half-removed. The ghost is dropped and the healthy
+    expired session is still cleaned up."""
+    config = StatesConfig()
+    registry = SessionRegistry(config, session_timeout_sec=0.1)
+
+    await registry.handle_transition("healthy", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
+    await asyncio.sleep(0.15)
+
+    # Inject a ghost: present in _last_active (so it lands in `expired`) but
+    # never created in _sessions. Before the defensive pop, popping it raised.
+    old = datetime.now(timezone.utc) - timedelta(seconds=10)
+    registry._last_active["ghost"] = old
+
+    frames, aggregate = await registry.cleanup_expired_frames()
+
+    removed = {f.session_id for f in frames}
+    assert "healthy" in removed  # not aborted before reaching it
+    assert "ghost" not in removed  # no StateMachine → no OFF frame
+    # Ghost fully purged from every dict.
+    assert "ghost" not in registry._last_active
+    assert "ghost" not in registry._metadata
+    assert "ghost" not in registry._agent_kinds
 
 
 async def test_cleanup_expired_frames_noop_when_nothing_expired():
