@@ -71,6 +71,26 @@ def test_no_matching_rule_returns_none_not_debounced():
     assert result is not DEBOUNCED
 
 
+def test_debounce_is_per_session():
+    """One session's event must not debounce another session's genuine event
+    of the same type. The daemon multiplexes concurrent sessions; keying
+    debounce on the event alone would silently drop the second session's
+    transition."""
+    rules = [RuleConfig(event="PreToolUse", state="tool_active", debounce_ms=2000)]
+    engine = RuleEngine(rules)
+
+    a = engine.resolve(HookEvent.PRE_TOOL_USE, "session-a")
+    assert a.state == AimontState.TOOL_ACTIVE
+
+    # Session B fires the same event within A's window — must still transition.
+    b = engine.resolve(HookEvent.PRE_TOOL_USE, "session-b")
+    assert b.state == AimontState.TOOL_ACTIVE
+
+    # But A firing again within its own window is still debounced.
+    a_again = engine.resolve(HookEvent.PRE_TOOL_USE, "session-a")
+    assert a_again is DEBOUNCED
+
+
 @pytest.mark.asyncio
 async def test_debounce_expires():
     rules = [RuleConfig(event="PreToolUse", state="tool_active", debounce_ms=100)]

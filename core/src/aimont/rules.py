@@ -32,27 +32,34 @@ DEBOUNCED = _Debounced()
 class RuleEngine:
     def __init__(self, rules: list[RuleConfig]):
         self._rules = rules
-        self._last_fired: dict[str, datetime] = {}
+        # Debounce is tracked per (session_id, event): the daemon multiplexes
+        # many concurrent sessions, so keying on the event alone would let one
+        # session's event throttle an unrelated session's genuine event of the
+        # same type within the window, silently dropping the latter's transition.
+        self._last_fired: dict[tuple[str | None, str], datetime] = {}
 
-    def resolve(self, event: HookEvent) -> RuleResult | _Debounced | None:
+    def resolve(
+        self, event: HookEvent, session_id: str | None = None
+    ) -> RuleResult | _Debounced | None:
         """Find target state for an event.
 
         Returns the RuleResult on a match, the DEBOUNCED sentinel if a matching
-        rule is currently debounced, or None if no rule matches the event.
+        rule is currently debounced (per session), or None if no rule matches
+        the event.
         """
         for rule in self._rules:
             if rule.event != event.value:
                 continue
-            if self._is_debounced(rule):
+            if self._is_debounced(rule, session_id):
                 return DEBOUNCED
-            self._last_fired[rule.event] = datetime.now(timezone.utc)
+            self._last_fired[(session_id, rule.event)] = datetime.now(timezone.utc)
             return RuleResult(state=state_from_name(rule.state), force=rule.force)
         return None
 
-    def _is_debounced(self, rule: RuleConfig) -> bool:
+    def _is_debounced(self, rule: RuleConfig, session_id: str | None) -> bool:
         if rule.debounce_ms <= 0:
             return False
-        last = self._last_fired.get(rule.event)
+        last = self._last_fired.get((session_id, rule.event))
         if last is None:
             return False
         elapsed_ms = (datetime.now(timezone.utc) - last).total_seconds() * 1000
