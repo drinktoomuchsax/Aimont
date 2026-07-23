@@ -157,6 +157,18 @@ def watch(
 
     import websockets
 
+    # Fail fast on a bad --mode rather than connecting only to have the daemon
+    # close us with 1008. Mirrors the server-side validation.
+    if mode not in ("aggregate", "all", "session"):
+        typer.echo(
+            f"Invalid --mode {mode!r}. Choose from: aggregate, all, session.",
+            err=True,
+        )
+        raise typer.Exit(2)
+    if mode == "session" and not session_id:
+        typer.echo("mode=session requires --session <id>.", err=True)
+        raise typer.Exit(2)
+
     async def _watch():
         url = f"ws://127.0.0.1:{port}/ws?mode={mode}"
         if session_id:
@@ -171,6 +183,12 @@ def watch(
                     typer.echo(format_watch_frame(frame))
         except ConnectionRefusedError:
             typer.echo("Daemon is not running.", err=True)
+            raise typer.Exit(1)
+        except websockets.exceptions.ConnectionClosedError as e:
+            # The daemon closed the socket abnormally (e.g. rejected the
+            # subscription). Report the reason instead of a bare traceback.
+            reason = (e.reason or "connection closed by daemon").strip()
+            typer.echo(f"Connection closed: {reason}", err=True)
             raise typer.Exit(1)
         except KeyboardInterrupt:
             pass
