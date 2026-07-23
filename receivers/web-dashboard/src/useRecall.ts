@@ -66,6 +66,34 @@ export function reduceSessionFrame(
   }
 }
 
+// Build the initial sessions map from the REST /sessions snapshot. Mirrors
+// reduceSessionFrame's off-handling: a session whose state resolves to 'off'
+// is skipped, never seeded. list_sessions serializes effective_state, which
+// can be OFF via TTL degradation while the StateMachine is still tracked (a
+// session is only dropped on SessionEnd/cleanup, not when it degrades). Since
+// an off session emits no further WS frames, seeding it here would leave a
+// permanent "Offline" ghost panel the delete path never reaches. Pure/exported
+// for testing. `sessions` is the `data.sessions` object from GET /sessions.
+export function snapshotSessions(
+  sessions: Record<string, { state: string; metadata?: SessionMetadata }> | undefined,
+): Record<string, SessionState> {
+  const initial: Record<string, SessionState> = {}
+  for (const [id, info] of Object.entries(sessions ?? {})) {
+    const state = resolveState(info.state)
+    if (state === 'off') continue
+    initial[id] = {
+      id,
+      state,
+      previousState: 'off',
+      lastChange: new Date(),
+      eventCount: 0,
+      metadata: info.metadata,
+      history: [{ state, timestamp: new Date() }],
+    }
+  }
+  return initial
+}
+
 // Map a raw presence frame to a HostPresence entry. Exported for testing.
 export function presenceFromFrame(frame: {
   host?: { host_id?: string; display_name?: string }
@@ -117,20 +145,7 @@ export function useRecall() {
       fetch(`${API_BASE}/sessions`)
         .then(r => r.json())
         .then(data => {
-          const initial: Record<string, SessionState> = {}
-          for (const [id, entry] of Object.entries(data.sessions ?? {})) {
-            const info = entry as { state: string; metadata?: SessionMetadata }
-            initial[id] = {
-              id,
-              state: info.state,
-              previousState: 'off',
-              lastChange: new Date(),
-              eventCount: 0,
-              metadata: info.metadata,
-              history: [{ state: info.state, timestamp: new Date() }],
-            }
-          }
-          setSessions(initial)
+          setSessions(snapshotSessions(data.sessions))
         })
         .catch(() => {})
 
