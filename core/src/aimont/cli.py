@@ -138,6 +138,9 @@ def daemon(
         host=host,
         port=port,
         log_level=level,
+        # Use the modern websockets implementation; the default auto-selects
+        # the deprecated websockets.legacy path.
+        ws="websockets-sansio",
     )
 
 

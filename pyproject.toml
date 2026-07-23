@@ -30,13 +30,9 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["core/tests"]
 # Treat warnings as errors so deprecations in our own code fail loudly.
-# The ignores below are known upstream noise from uvicorn's bundled
-# websockets integration (uvicorn still imports websockets.legacy); they
-# are outside our control and drop off when uvicorn migrates. Keep this
-# list tight — a new warning here should be a signal, not silenced.
+# The daemon and the test uvicorn servers select ws="websockets-sansio",
+# avoiding uvicorn's deprecated websockets.legacy path — so no ignores are
+# needed here. A new warning should be a signal, not silenced.
 filterwarnings = [
     "error",
-    "ignore:websockets.legacy is deprecated:DeprecationWarning",
-    "ignore:websockets.server.WebSocketServerProtocol is deprecated:DeprecationWarning",
-    "ignore:remove second argument of ws_handler:DeprecationWarning",
 ]
