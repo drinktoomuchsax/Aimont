@@ -24,8 +24,17 @@ class MessageIdCache:
     """
 
     def __init__(self, ttl_sec: float = 600.0, max_size: int = 1000):
-        self._ttl = ttl_sec
-        self._max = max_size
+        # Guard both bounds against non-positive values. A max_size <= 0 would
+        # pop every entry the instant it's added (len 1 > 0), leaving the cache
+        # forever empty; a ttl_sec <= 0 pushes the expiry cutoff to now-or-later
+        # so every entry is expired on the next sweep. Either silently disables
+        # dedup — add() always returns True — turning the cascade back into the
+        # re-delivery storm this cache exists to stop. These values come from
+        # IngestConfig ints/floats that aren't otherwise range-checked. Small
+        # positive TTLs are legitimate, so only a non-positive one falls back to
+        # the default.
+        self._ttl = ttl_sec if ttl_sec > 0 else 600.0
+        self._max = max(1, max_size)
         self._entries: OrderedDict[str, float] = OrderedDict()
         self._lock = asyncio.Lock()
 
