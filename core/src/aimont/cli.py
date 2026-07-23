@@ -11,10 +11,13 @@ app = typer.Typer(name="aimont", help="Human-in-the-loop state broadcast for Cla
 
 
 def _exit_daemon_unreachable(exc: Exception) -> None:
-    """Map an httpx error from a daemon HTTP call to a clean message + exit.
+    """Map an httpx/decode error from a daemon HTTP call to a clean message + exit.
 
     ConnectError means nothing is listening; a timeout means the daemon is up
-    but not responding. Either way we exit 1 rather than dumping a traceback.
+    but not responding; an HTTP status error means it answered with an error
+    code; a JSON decode error (ValueError) means whatever answered on that port
+    isn't the aimont daemon. Either way we exit 1 rather than dumping a
+    traceback.
     """
     import httpx
 
@@ -22,6 +25,12 @@ def _exit_daemon_unreachable(exc: Exception) -> None:
         typer.echo("Daemon is not running.", err=True)
     elif isinstance(exc, httpx.TimeoutException):
         typer.echo("Daemon did not respond in time (is it hung?).", err=True)
+    elif isinstance(exc, httpx.HTTPStatusError):
+        typer.echo(f"Daemon returned an error status: {exc.response.status_code}.", err=True)
+    elif isinstance(exc, ValueError):
+        # json.JSONDecodeError subclasses ValueError. A non-JSON body means
+        # something other than the daemon is listening on this port.
+        typer.echo("Unexpected response from daemon (not JSON — wrong port?).", err=True)
     else:
         typer.echo(f"Could not reach daemon: {exc}", err=True)
     raise typer.Exit(1)
@@ -153,12 +162,13 @@ def status(
 
     try:
         r = httpx.get(f"http://127.0.0.1:{port}/state", timeout=2.0)
+        r.raise_for_status()
         data = r.json()
-        typer.echo(f"State: {data['state']}")
-        typer.echo(f"Sessions: {data['active_sessions']}")
+        typer.echo(f"State: {data.get('state', '?')}")
+        typer.echo(f"Sessions: {data.get('active_sessions', '?')}")
         if data.get("breakdown"):
             typer.echo(f"Breakdown: {data['breakdown']}")
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, ValueError) as e:
         _exit_daemon_unreachable(e)
 
 
@@ -224,8 +234,9 @@ def sessions(
 
     try:
         r = httpx.get(f"http://127.0.0.1:{port}/sessions", timeout=2.0)
+        r.raise_for_status()
         data = r.json()
-        if not data["sessions"]:
+        if not data.get("sessions"):
             typer.echo("No active sessions.")
         else:
             for sid, info in data["sessions"].items():
@@ -235,7 +246,7 @@ def sessions(
                     typer.echo(f"  [{kind}] {sid}: {state}")
                 else:
                     typer.echo(f"  {sid}: {info}")
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, ValueError) as e:
         _exit_daemon_unreachable(e)
 
 
@@ -399,6 +410,7 @@ def test(
             json={"event": event, "session_id": session_id},
             timeout=2.0,
         )
+        r.raise_for_status()
         typer.echo(r.json())
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, ValueError) as e:
         _exit_daemon_unreachable(e)
