@@ -44,7 +44,7 @@ class StateMachine:
     def durations(self) -> StateDurations:
         """Cumulative durations including time in current state."""
         d = dict(self._durations)
-        elapsed = (datetime.now(timezone.utc) - self._set_at).total_seconds()
+        elapsed = self._elapsed_since_set()
         self._charge_elapsed(d, elapsed)
         return StateDurations(**d)
 
@@ -84,9 +84,20 @@ class StateMachine:
         """Duration of the previous state (seconds). Call after a transition."""
         return self._last_duration
 
+    def _elapsed_since_set(self) -> float:
+        """Seconds since the current state was set, clamped to >= 0.
+
+        The wall clock can step backward (NTP correction, VM clock adjustment)
+        between _set_at and a read, yielding a negative delta. Left unclamped
+        that subtracts time from cumulative durations and emits negative
+        StateFrame.duration values; clamp so a backward step charges 0, never
+        negative."""
+        elapsed = (datetime.now(timezone.utc) - self._set_at).total_seconds()
+        return max(0.0, elapsed)
+
     def _apply(self, new_state: AimontState, old: AimontState) -> tuple[AimontState, bool]:
         now = datetime.now(timezone.utc)
-        elapsed = (now - self._set_at).total_seconds()
+        elapsed = max(0.0, (now - self._set_at).total_seconds())
         # Accumulate duration for the state(s) we're leaving. Once the current
         # state's TTL expires it degrades (effective_state reflects this), so
         # time past the TTL is charged to the degrade target, not _current.
