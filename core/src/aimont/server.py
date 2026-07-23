@@ -19,6 +19,7 @@ from aimont.message_cache import MessageIdCache
 from aimont.models import (
     DEFAULT_AGENT_KIND,
     EVENT_PAYLOAD_VERSION,
+    FRAME_SCHEMA_VERSION,
     AggregateFrame,
     EventPayload,
     HookEvent,
@@ -428,11 +429,20 @@ def _authorize_ingest(ws: WebSocket, allowed_tokens: list[str]) -> bool:
 def _parse_ingest_frame(raw: str) -> StateFrame | AggregateFrame | PresenceFrame | None:
     """Try to parse a JSON payload as one of the known frame types.
 
-    Returns None for unparseable JSON or unknown `type` values.
+    Returns None for unparseable JSON, unknown `type` values, or a frame whose
+    schema_version is newer than we support. A future daemon's v3 frame may
+    still parse structurally under our v2 model yet mean something different,
+    so we reject unknown majors up front (matching the /events version guard)
+    instead of silently relaying a misinterpreted frame.
     """
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    version = data.get("schema_version", FRAME_SCHEMA_VERSION)
+    if isinstance(version, int) and version > FRAME_SCHEMA_VERSION:
         return None
     ftype = data.get("type")
     try:
