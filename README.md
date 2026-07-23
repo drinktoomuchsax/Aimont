@@ -63,7 +63,7 @@ async def main():
     async with websockets.connect("ws://127.0.0.1:8765/ws") as ws:
         async for msg in ws:
             frame = json.loads(msg)
-            # frame["state"]: 60 = awaiting_input, 80 = needs_permission...
+            # frame["state"]: 60 = awaiting_input, 80 = awaiting_permission...
             # 你来决定灯什么颜色、App 怎么显示、声音响不响
 
 asyncio.run(main())
