@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { SessionState, SessionMetadata, AggregateState, STATE_NAMES } from './types'
+import { SessionState, SessionMetadata, AggregateState, HostPresence, STATE_NAMES } from './types'
 
 const WS_URL = 'ws://127.0.0.1:8765/ws?mode=all'
 const API_BASE = 'http://127.0.0.1:8765'
@@ -13,6 +13,24 @@ function resolveState(s: number | string): string {
   return s
 }
 
+// Map a raw presence frame to a HostPresence entry. Exported for testing.
+export function presenceFromFrame(frame: {
+  host?: { host_id?: string; display_name?: string }
+  status?: string
+  last_active_ago_ms?: number | null
+  timestamp?: string
+}): HostPresence | null {
+  const hostId = frame.host?.host_id
+  if (!hostId) return null
+  return {
+    hostId,
+    displayName: frame.host?.display_name,
+    status: frame.status === 'offline' ? 'offline' : 'online',
+    lastActiveAgoMs: frame.last_active_ago_ms ?? null,
+    lastChange: frame.timestamp ? new Date(frame.timestamp) : new Date(),
+  }
+}
+
 export function useRecall() {
   const [sessions, setSessions] = useState<Record<string, SessionState>>({})
   const [aggregate, setAggregate] = useState<AggregateState>({
@@ -20,6 +38,7 @@ export function useRecall() {
     activeSessions: 0,
     breakdown: {},
   })
+  const [hosts, setHosts] = useState<Record<string, HostPresence>>({})
   const [connected, setConnected] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectRef = useRef<ReturnType<typeof setTimeout>>()
@@ -76,7 +95,12 @@ export function useRecall() {
         return
       }
 
-      if (frame.type === 'aggregate') {
+      if (frame.type === 'presence') {
+        const presence = presenceFromFrame(frame)
+        if (presence) {
+          setHosts(curr => ({ ...curr, [presence.hostId]: presence }))
+        }
+      } else if (frame.type === 'aggregate') {
         setAggregate({
           state: resolveState(frame.state),
           activeSessions: frame.active_sessions,
@@ -137,5 +161,5 @@ export function useRecall() {
     }
   }, [connect])
 
-  return { sessions, aggregate, connected }
+  return { sessions, aggregate, hosts, connected }
 }
