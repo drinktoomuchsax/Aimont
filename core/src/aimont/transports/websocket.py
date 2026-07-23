@@ -99,6 +99,12 @@ class WebSocketTransport(BaseTransport):
     async def disconnect(self, ws: WebSocket) -> None:
         async with self._lock:
             self._subscribers = [s for s in self._subscribers if s.ws != ws]
+        # Best-effort close: on an abnormal receive-loop exit the socket may
+        # still be half-open. Already-closed sockets raise; ignore.
+        try:
+            await ws.close()
+        except Exception:
+            pass
 
     def _wants_session_frame(self, sub: Subscriber, frame: StateFrame | PresenceFrame) -> bool:
         if sub.mode == "aggregate":

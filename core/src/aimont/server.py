@@ -375,6 +375,13 @@ def create_api(app_obj: App | None = None) -> FastAPI:
             while True:
                 await ws.receive_text()
         except WebSocketDisconnect:
+            pass
+        finally:
+            # Clean up on EVERY exit path, not just a clean WebSocketDisconnect.
+            # An abnormal close (RuntimeError from the ASGI server,
+            # ConnectionClosedError, CancelledError on shutdown) would otherwise
+            # leak the subscriber forever — its dead socket stays in the
+            # broadcast list and is iterated on every frame. Idempotent.
             await app.ws_disconnect(ws)
 
     @fastapi_app.websocket("/ingest")
