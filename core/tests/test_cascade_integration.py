@@ -70,6 +70,7 @@ async def _spawn_daemon(
         port=port,
         log_level="warning",
         lifespan="off",
+        ws="websockets-sansio",
     )
     server = uvicorn.Server(cfg)
     task = asyncio.create_task(server.serve())
