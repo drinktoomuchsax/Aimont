@@ -8,6 +8,7 @@ _extract_metadata logic is exercised here — no network, no daemon.
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 
 import pytest
@@ -66,3 +67,34 @@ def test_extract_error_type_on_stop_failure(emit):
 def test_extract_effort_dict_and_scalar(emit):
     assert emit._extract_metadata({"effort": {"level": "high"}}, "Stop")["effort_level"] == "high"
     assert emit._extract_metadata({"effort": "low"}, "Stop")["effort_level"] == "low"
+
+
+def test_start_daemon_lock_prevents_concurrent_spawn(emit, tmp_path, monkeypatch):
+    """When the start lock is already held, _start_daemon must not spawn a
+    second daemon (guards against multiple hooks racing at startup)."""
+    import fcntl
+
+    lockfile = tmp_path / "daemon.start.lock"
+    monkeypatch.setattr(emit, "LOCKFILE", str(lockfile))
+    monkeypatch.setattr(emit, "PIDFILE", str(tmp_path / "daemon.pid"))
+
+    spawned = []
+    monkeypatch.setattr(emit.subprocess, "Popen", lambda *a, **k: spawned.append(a) or _FakeProc())
+
+    # Hold the lock as if another hook is mid-start.
+    held = os.open(str(lockfile), os.O_CREAT | os.O_RDWR, 0o600)
+    fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        emit._start_daemon()
+        assert spawned == []  # second starter backed off
+    finally:
+        fcntl.flock(held, fcntl.LOCK_UN)
+        os.close(held)
+
+    # With the lock free, a start does spawn.
+    emit._start_daemon()
+    assert len(spawned) == 1
+
+
+class _FakeProc:
+    pid = 4321
