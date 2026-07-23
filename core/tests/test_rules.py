@@ -6,7 +6,7 @@ import pytest
 
 from aimont.config import DEFAULT_RULES, RuleConfig
 from aimont.models import HookEvent, AimontState
-from aimont.rules import RuleEngine
+from aimont.rules import DEBOUNCED, RuleEngine
 
 
 @pytest.fixture
@@ -59,7 +59,16 @@ def test_debounce_blocks_rapid_fire():
     assert first.state == AimontState.TOOL_ACTIVE
 
     second = engine.resolve(HookEvent.PRE_TOOL_USE)
-    assert second is None
+    assert second is DEBOUNCED
+
+
+def test_no_matching_rule_returns_none_not_debounced():
+    """An event with no configured rule must return None, distinct from the
+    DEBOUNCED sentinel, so callers don't mislabel it as debounced."""
+    engine = RuleEngine([RuleConfig(event="Stop", state="awaiting_input")])
+    result = engine.resolve(HookEvent.PRE_TOOL_USE)
+    assert result is None
+    assert result is not DEBOUNCED
 
 
 @pytest.mark.asyncio

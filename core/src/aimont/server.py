@@ -26,7 +26,7 @@ from aimont.models import (
     PresenceFrame,
     StateFrame,
 )
-from aimont.rules import RuleEngine
+from aimont.rules import DEBOUNCED, RuleEngine, RuleResult
 from aimont.session_registry import SessionRegistry
 from aimont.transports import get_transport_class
 from aimont.transports.base import BaseTransport
@@ -118,8 +118,10 @@ class App:
 
     async def handle_event(self, payload: EventPayload) -> dict:
         result = self.rules.resolve(payload.event)
-        if result is None:
-            return {"status": "debounced"}
+        if not isinstance(result, RuleResult):
+            # DEBOUNCED sentinel = a rule matched but is throttled; None = no
+            # rule maps this event at all. Report them distinctly.
+            return {"status": "debounced" if result is DEBOUNCED else "no_rule"}
 
         session_id = payload.session_id
         agent_kind = payload.agent_kind
