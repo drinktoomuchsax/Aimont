@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any
 
 import websockets
@@ -30,6 +31,11 @@ logger = logging.getLogger(__name__)
 
 _MIN_BACKOFF_SEC = 1.0
 _MAX_BACKOFF_SEC = 60.0
+# A connection must stay open at least this long to count as "usable" and
+# reset the backoff. Handshake-accept-then-immediate-close upstreams (expired
+# token, disabled /ingest, policy close) otherwise pin the backoff at the
+# minimum and get hammered once per second forever.
+_STABLE_CONNECTION_SEC = 10.0
 
 
 @register_transport("push")
@@ -116,12 +122,18 @@ class PushTransport(BaseTransport):
             try:
                 async with self._open_connection() as ws:
                     self._ws = ws
-                    backoff = _MIN_BACKOFF_SEC  # reset on successful connect
                     await self._send_hello(ws)
+                    opened_at = time.monotonic()
                     # Keep connection open until the server closes it or
                     # we get cancelled. We don't consume incoming frames
                     # yet (PR 3 will wire bidirectional forwarding).
                     await ws.wait_closed()
+                    # Only reset backoff if the connection proved usable by
+                    # staying open a while. A handshake that succeeds then
+                    # drops immediately must NOT reset, or backoff never
+                    # escalates and we hot-loop against a rejecting upstream.
+                    if time.monotonic() - opened_at >= _STABLE_CONNECTION_SEC:
+                        backoff = _MIN_BACKOFF_SEC
             except asyncio.CancelledError:
                 raise
             except Exception as e:
