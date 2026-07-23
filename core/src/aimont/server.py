@@ -105,6 +105,14 @@ class App:
             logger.debug("failed to emit offline presence on stop: %s", e)
         if self._cleanup_task:
             self._cleanup_task.cancel()
+            # Await the cancellation so it's confirmed (and its CancelledError
+            # absorbed) rather than leaving a pending task to be GC'd with a
+            # "Task was destroyed but it is pending!" warning.
+            try:
+                await self._cleanup_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._cleanup_task = None
         for t in self.transports:
             await t.stop()
 
