@@ -511,7 +511,10 @@ Response:
 {"status": "ok", "state": "awaiting_input", "session_id": "abc123"}
 ```
 
-Possible `status` values: `"ok"`, `"no_change"`, `"debounced"`, `"unknown_event"`
+Possible `status` values: `"ok"`, `"no_change"`, `"debounced"`, `"no_rule"`.
+`"no_rule"` is returned for a valid event that no configured rule maps to a
+state. An unmapped legacy (unversioned) event name is rejected with HTTP 400
+and `{"detail": "unknown_event"}` — an error body, not a `status` value.
 
 ### GET /state
 
