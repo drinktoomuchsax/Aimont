@@ -39,6 +39,12 @@ class TerminalTransport(BaseTransport):
         interactive = options.get("force", False) or sys.stdout.isatty()
         self._bell_enabled = options.get("bell", True) and interactive
         self._title_enabled = options.get("title", True) and interactive
+        # The last aggregate state we saw, so we ring the bell only on a
+        # transition *into* an attention state — not on every frame. The daemon
+        # re-emits an aggregate frame whenever any session changes, even when
+        # the aggregate state is unchanged, so ringing unconditionally would
+        # beep on every tool call while one session sits at AWAITING_PERMISSION.
+        self._last_state: AimontState | None = None
 
     async def start(self) -> None:
         pass
@@ -59,8 +65,11 @@ class TerminalTransport(BaseTransport):
                 label = f"{label} [{frame.active_sessions} sessions]"
             self._set_title(label)
 
-        if self._bell_enabled and frame.state in BELL_STATES:
+        # Ring only when we newly enter a bell state. Staying in one (while the
+        # aggregate is re-emitted for unrelated session changes) must stay quiet.
+        if self._bell_enabled and frame.state in BELL_STATES and frame.state != self._last_state:
             self._ring_bell()
+        self._last_state = frame.state
 
     def _set_title(self, title: str) -> None:
         sys.stdout.write(f"\033]0;{title}\007")
