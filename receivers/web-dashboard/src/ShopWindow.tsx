@@ -13,7 +13,10 @@ interface Props {
   session: SessionState
 }
 
-const STATE_CSS_COLOR: Record<string, string> = {
+// The dashboard's own state palette (distinct hex values from types.ts's
+// STATE_COLORS). Exported so a test can assert it covers the same set of state
+// keys — a missing key silently falls back to a generic grey. See parity test.
+export const STATE_CSS_COLOR: Record<string, string> = {
   off: '#555',
   idle: '#4ec970',
   working: '#4a9df8',
@@ -22,6 +25,11 @@ const STATE_CSS_COLOR: Record<string, string> = {
   awaiting_permission: '#b07ee8',
   notification: '#c09af0',
   error: '#e85d5d',
+  // A state code this dashboard doesn't recognize (forward-compat frame from a
+  // newer daemon). resolveState maps it to 'unknown'; give it a neutral grey
+  // so the dot/border/timeline render consistently rather than falling to the
+  // generic `?? '#555'`/`?? '#333'` fallbacks.
+  unknown: '#777777',
 }
 
 const BLOCK_SIZE = 8 // px per block (6px block + 2px gap)
