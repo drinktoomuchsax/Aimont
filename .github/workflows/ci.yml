@@ -99,3 +99,9 @@ jobs:
 
       - name: Unit tests (vitest)
         run: npm test
+
+      # `tsc --noEmit` and vitest don't exercise the production bundler, so a
+      # Vite build break (bad import resolution, asset handling, plugin config)
+      # would land green. Run the real build to gate on it.
+      - name: Production build (vite)
+        run: npm run build
