@@ -14,7 +14,7 @@ Aimont 是一个 **状态广播中间层**：它追踪你所有 Claude Code sess
 | 💡 USB 灯 | 🔜 开发中 | 串口推送状态帧，灯色随状态变化 |
 | 📱 手机 App | 🔜 开发中 | 云端中转推送到 Flutter App |
 | 🏠 智能家居 | 🔜 规划中 | MQTT / Home Assistant / WLED |
-| 🔗 Webhook | 🔜 规划中 | HTTP 推送到任何外部系统 |
+| 🔗 Webhook | ✅ 已实现 | HTTP POST 状态帧到任何外部系统（见 [protocol.md](docs/protocol.md#webhook-transport)） |
 
 **核心只做一件事：算状态、广播状态。** 怎么展示完全交给接入方决定。
 

@@ -40,3 +40,4 @@ def _load_builtins():
     import aimont.transports.websocket  # noqa: F401
     import aimont.transports.terminal  # noqa: F401
     import aimont.transports.push  # noqa: F401
+    import aimont.transports.webhook  # noqa: F401
