@@ -18,6 +18,7 @@ from aimont.config import AimontConfig, load_config
 from aimont.message_cache import MessageIdCache
 from aimont.models import (
     DEFAULT_AGENT_KIND,
+    DEFAULT_SESSION_ID,
     EVENT_PAYLOAD_VERSION,
     FRAME_SCHEMA_VERSION,
     AggregateFrame,
@@ -262,7 +263,7 @@ class App:
                 logger.exception("periodic session cleanup failed; will retry next cycle")
 
     def _default_session_id(self) -> str:
-        return "default"
+        return DEFAULT_SESSION_ID
 
     async def ws_connect(self, ws: WebSocket, mode: str, session_filter: str | None) -> bool:
         """Returns True if the socket was accepted, False if it was closed

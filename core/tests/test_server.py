@@ -63,6 +63,27 @@ async def test_post_event_without_session_id_uses_default(client):
 
 
 @pytest.mark.asyncio
+async def test_versioned_event_without_session_id_uses_default(client):
+    """A versioned payload omitting session_id must behave like the legacy
+    path (default to "default"), not 422. Previously EventPayload.session_id
+    was required, so the two /events paths disagreed for the same event."""
+    r = await client.post("/events", json={"version": 1, "event": "UserPromptSubmit"})
+    assert r.status_code == 200, r.text
+    assert r.json()["session_id"] == "default"
+
+
+@pytest.mark.asyncio
+async def test_versioned_event_blank_session_id_uses_default(client):
+    """An explicitly empty/whitespace session_id is normalized to the default,
+    matching the legacy path's `session_id or "default"`."""
+    r = await client.post(
+        "/events", json={"version": 1, "event": "UserPromptSubmit", "session_id": "   "}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["session_id"] == "default"
+
+
+@pytest.mark.asyncio
 async def test_get_state_returns_aggregate(client):
     await client.post("/events", json={"event": "UserPromptSubmit", "session_id": "s1"})
     await client.post("/events", json={"event": "PermissionRequest", "session_id": "s2"})

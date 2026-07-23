@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import IntEnum, StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class HookEvent(StrEnum):
@@ -65,6 +65,8 @@ class StateDurations(BaseModel):
 
 DEFAULT_AGENT_KIND = "claude"
 
+DEFAULT_SESSION_ID = "default"
+
 EVENT_PAYLOAD_VERSION = 1
 
 
@@ -77,9 +79,23 @@ class EventPayload(BaseModel):
 
     version: int = EVENT_PAYLOAD_VERSION
     event: HookEvent
-    session_id: str
+    session_id: str = DEFAULT_SESSION_ID
     agent_kind: str = DEFAULT_AGENT_KIND
     metadata: "SessionMetadata | None" = None
+
+    @field_validator("session_id", mode="before")
+    @classmethod
+    def _default_blank_session_id(cls, v: object) -> object:
+        # A missing session_id defaults to "default" (the field default); an
+        # explicitly empty/whitespace-only one is normalized to the same, so a
+        # versioned payload behaves identically to the legacy path (which does
+        # `data.get("session_id") or "default"`). Without this a versioned
+        # payload omitting session_id used to 422 while the legacy one didn't.
+        if v is None:
+            return DEFAULT_SESSION_ID
+        if isinstance(v, str) and not v.strip():
+            return DEFAULT_SESSION_ID
+        return v
 
 
 # Bump on breaking frame shape changes. Receivers should reject unknown majors.
