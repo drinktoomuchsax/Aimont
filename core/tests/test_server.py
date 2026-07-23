@@ -128,7 +128,7 @@ async def test_list_sessions_includes_agent_kind(client):
 
 @pytest.mark.asyncio
 async def test_periodic_cleanup_survives_a_failing_sweep():
-    """A raising cleanup_expired() must not kill the cleanup loop; the next
+    """A raising cleanup sweep must not kill the cleanup loop; the next
     cycle should still run."""
     import asyncio
     from unittest.mock import patch
@@ -144,7 +144,7 @@ async def test_periodic_cleanup_survives_a_failing_sweep():
         calls["n"] += 1
         if calls["n"] == 1:
             raise RuntimeError("boom")
-        return []
+        return [], None
 
     # Skip the real 300s wait; cancel after enough cycles to prove recovery.
     async def fake_sleep(_):
@@ -152,7 +152,7 @@ async def test_periodic_cleanup_survives_a_failing_sweep():
             raise asyncio.CancelledError
 
     with (
-        patch.object(app.registry, "cleanup_expired", side_effect=flaky_cleanup),
+        patch.object(app.registry, "cleanup_expired_frames", side_effect=flaky_cleanup),
         patch("aimont.server.asyncio.sleep", side_effect=fake_sleep),
     ):
         with pytest.raises(asyncio.CancelledError):
