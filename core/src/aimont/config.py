@@ -226,6 +226,12 @@ def _apply_push_env_overrides(merged: dict[str, Any]) -> None:
         }
         existing = transports["push"]
 
+    # Supplying credentials via env / token file is an explicit request to push,
+    # so force the transport on even if config.yaml had `enabled: false` —
+    # otherwise the URL is injected but the transport stays dark. Mirrors how
+    # _apply_ingest_env_overrides flips `enabled` from the environment.
+    existing["type"] = "push"
+    existing["enabled"] = True
     options = existing.setdefault("options", {})
     options["upstream_url"] = url
     if auth:

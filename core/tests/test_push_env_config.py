@@ -42,6 +42,27 @@ def test_no_upstream_url_means_no_push_transport():
     assert "push" not in cfg.transports
 
 
+def test_env_force_enables_disabled_yaml_push(monkeypatch, tmp_path):
+    """Supplying AIMONT_UPSTREAM_URL is an explicit request to push, so it must
+    override a config.yaml push block that had enabled: false — otherwise the
+    URL is injected but the transport stays dark."""
+    cfg_yaml = tmp_path / ".aimont.yaml"
+    cfg_yaml.write_text(
+        "transports:\n"
+        "  push:\n"
+        "    type: push\n"
+        "    enabled: false\n"
+        "    options:\n"
+        "      upstream_url: wss://from-yaml.example.com\n"
+    )
+    monkeypatch.setenv("AIMONT_UPSTREAM_URL", "wss://from-env.example.com")
+
+    cfg = load_config()
+    push = cfg.transports["push"]
+    assert push.enabled is True
+    assert push.options["upstream_url"] == "wss://from-env.example.com"
+
+
 def test_env_overrides_existing_yaml_config(monkeypatch, tmp_path):
     cfg_yaml = tmp_path / ".aimont.yaml"
     cfg_yaml.write_text(
