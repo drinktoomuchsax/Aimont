@@ -1,5 +1,13 @@
 import { useRef, useState, useEffect } from 'react'
-import { SessionState, StateHistoryEntry, STATE_DISPLAY, EFFORT_COLORS, parseModel } from './types'
+import {
+  SessionState,
+  StateHistoryEntry,
+  STATE_DISPLAY,
+  EFFORT_COLORS,
+  parseModel,
+  formatDuration,
+  formatToolLine,
+} from './types'
 
 interface Props {
   session: SessionState
@@ -52,9 +60,9 @@ export default function SessionRow({ session }: Props) {
         </span>
         <span className="p-right">
           {session.duration != null && session.duration > 0 && (
-            <span className="p-dur">↳{fmt(session.duration)}</span>
+            <span className="p-dur">↳{formatDuration(session.duration)}</span>
           )}
-          {totalTime > 0 && <span className="p-total">{fmt(totalTime)}</span>}
+          {totalTime > 0 && <span className="p-total">{formatDuration(totalTime)}</span>}
           <span className="p-time">{time}</span>
         </span>
       </div>
@@ -137,27 +145,3 @@ function Timeline({ history }: { history: StateHistoryEntry[] }) {
   )
 }
 
-function fmt(seconds: number): string {
-  if (seconds < 60) return `${Math.round(seconds)}s`
-  if (seconds < 3600) {
-    const m = Math.floor(seconds / 60)
-    const s = Math.round(seconds % 60)
-    return s > 0 ? `${m}m${s}s` : `${m}m`
-  }
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  return m > 0 ? `${h}h${m}m` : `${h}h`
-}
-
-function formatToolLine(toolName: string, context?: string): string {
-  const icons: Record<string, string> = {
-    Bash: '$', Edit: '~', Write: '+', Read: '>', Grep: '?', Glob: '*',
-    Agent: '@', WebFetch: '↓', WebSearch: '/',
-  }
-  const icon = icons[toolName] ?? '#'
-  if (context) {
-    const short = context.length > 45 ? context.slice(0, 42) + '…' : context
-    return `${icon} ${short}`
-  }
-  return `${icon} ${toolName}`
-}

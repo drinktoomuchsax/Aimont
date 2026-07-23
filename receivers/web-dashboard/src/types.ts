@@ -77,6 +77,34 @@ export interface HostPresence {
   lastChange: Date
 }
 
+/** Format a duration in seconds as a compact human label (e.g. 5s, 3m20s, 2h5m). */
+export function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  if (seconds < 3600) {
+    const m = Math.floor(seconds / 60)
+    const s = Math.round(seconds % 60)
+    return s > 0 ? `${m}m${s}s` : `${m}m`
+  }
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  return m > 0 ? `${h}h${m}m` : `${h}h`
+}
+
+const TOOL_ICONS: Record<string, string> = {
+  Bash: '$', Edit: '~', Write: '+', Read: '>', Grep: '?', Glob: '*',
+  Agent: '@', WebFetch: '↓', WebSearch: '/',
+}
+
+/** Format a tool + optional context into a one-line label with an icon. */
+export function formatToolLine(toolName: string, context?: string): string {
+  const icon = TOOL_ICONS[toolName] ?? '#'
+  if (context) {
+    const short = context.length > 45 ? context.slice(0, 42) + '…' : context
+    return `${icon} ${short}`
+  }
+  return `${icon} ${toolName}`
+}
+
 /** Human-readable "last seen" label from a millisecond age, or null if unknown. */
 export function formatLastSeen(ms?: number | null): string | null {
   if (ms == null || ms < 0) return null
