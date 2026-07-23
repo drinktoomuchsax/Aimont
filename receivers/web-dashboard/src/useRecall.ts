@@ -4,6 +4,10 @@ import { SessionState, SessionMetadata, AggregateState, STATE_NAMES } from './ty
 const WS_URL = 'ws://127.0.0.1:8765/ws?mode=all'
 const API_BASE = 'http://127.0.0.1:8765'
 
+// Cap per-session history so a long-lived session doesn't grow the array
+// (and the rendered Timeline's DOM) without bound.
+const MAX_HISTORY = 500
+
 function resolveState(s: number | string): string {
   if (typeof s === 'number') return STATE_NAMES[s] ?? 'off'
   return s
@@ -60,7 +64,13 @@ export function useRecall() {
     }
 
     ws.onmessage = (event) => {
-      const frame = JSON.parse(event.data)
+      let frame
+      try {
+        frame = JSON.parse(event.data)
+      } catch {
+        // Ignore malformed frames rather than letting the handler throw.
+        return
+      }
 
       if (frame.type === 'aggregate') {
         setAggregate({
@@ -82,7 +92,10 @@ export function useRecall() {
         } else {
           setSessions(curr => {
             const prev = curr[sid]
-            const history = [...(prev?.history ?? []), { state, timestamp: new Date(frame.timestamp) }]
+            const history = [
+              ...(prev?.history ?? []),
+              { state, timestamp: new Date(frame.timestamp) },
+            ].slice(-MAX_HISTORY)
             return {
               ...curr,
               [sid]: {

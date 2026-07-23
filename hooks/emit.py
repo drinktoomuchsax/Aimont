@@ -25,7 +25,6 @@ import urllib.error
 import urllib.request
 
 DAEMON_URL = "http://127.0.0.1:8765/events"
-HEALTH_URL = "http://127.0.0.1:8765/state"
 TIMEOUT_SEC = 0.5
 PIDFILE = os.path.expanduser("~/.aimont/daemon.pid")
 
@@ -82,14 +81,6 @@ def _extract_metadata(payload, event_name):
         meta["agent_type"] = agent_type
 
     return meta or None
-
-
-def _daemon_alive() -> bool:
-    try:
-        urllib.request.urlopen(HEALTH_URL, timeout=0.3)
-        return True
-    except Exception:
-        return False
 
 
 def _start_daemon():

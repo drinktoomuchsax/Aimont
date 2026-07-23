@@ -232,14 +232,26 @@ class App:
     async def _periodic_cleanup(self) -> None:
         while True:
             await asyncio.sleep(300)
-            await self.registry.cleanup_expired()
+            try:
+                await self.registry.cleanup_expired()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # A single failed sweep must not kill the loop for the
+                # daemon's lifetime — that would let expired sessions (the
+                # very thing this bounds) accumulate unbounded. Log and
+                # retry on the next cycle.
+                logger.exception("periodic session cleanup failed; will retry next cycle")
 
     def _default_session_id(self) -> str:
         return "default"
 
-    async def ws_connect(self, ws: WebSocket, mode: str, session_filter: str | None) -> None:
+    async def ws_connect(self, ws: WebSocket, mode: str, session_filter: str | None) -> bool:
+        """Returns True if the socket was accepted, False if it was closed
+        (e.g. invalid mode) so the endpoint can skip the receive loop."""
         if self._ws_transport:
-            await self._ws_transport.connect(ws, mode=mode, session_filter=session_filter)
+            return await self._ws_transport.connect(ws, mode=mode, session_filter=session_filter)
+        return False
 
     async def ws_disconnect(self, ws: WebSocket) -> None:
         if self._ws_transport:
@@ -322,7 +334,7 @@ def create_api(app_obj: App | None = None) -> FastAPI:
         app = get_app_instance(fastapi_app)
         info = await app.registry.get_session_info(session_id)
         if info is None:
-            return {"error": "session not found"}
+            raise HTTPException(status_code=404, detail="session_not_found")
         return info
 
     @fastapi_app.websocket("/ws")
@@ -338,7 +350,10 @@ def create_api(app_obj: App | None = None) -> FastAPI:
         mode=session: only frames for a specific session (requires ?session=ID)
         """
         app = get_app_instance(fastapi_app)
-        await app.ws_connect(ws, mode=mode, session_filter=session)
+        accepted = await app.ws_connect(ws, mode=mode, session_filter=session)
+        if not accepted:
+            # Socket was closed (e.g. invalid mode); don't read from it.
+            return
         try:
             while True:
                 await ws.receive_text()

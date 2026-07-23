@@ -77,11 +77,24 @@ class WebSocketTransport(BaseTransport):
 
     async def connect(
         self, ws: WebSocket, mode: str = "aggregate", session_filter: str | None = None
-    ) -> None:
+    ) -> bool:
+        """Accept a subscriber. Returns True if accepted, False if the socket
+        was closed due to a misconfigured subscription (so the caller knows
+        not to read from a now-closed connection)."""
         await ws.accept()
+        # Reject misconfigured subscriptions loudly instead of accepting them
+        # and silently never delivering a frame (which looks identical to "no
+        # activity" from the client's side). 1008 = policy violation.
+        if mode not in ("aggregate", "all", "session"):
+            await ws.close(code=1008, reason=f"invalid mode: {mode!r}")
+            return False
+        if mode == "session" and not session_filter:
+            await ws.close(code=1008, reason="mode=session requires ?session=<id>")
+            return False
         sub = Subscriber(ws=ws, mode=mode, session_filter=session_filter)
         async with self._lock:
             self._subscribers.append(sub)
+        return True
 
     async def disconnect(self, ws: WebSocket) -> None:
         async with self._lock:

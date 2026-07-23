@@ -50,6 +50,16 @@ async def test_session_end_removes_session(registry):
 
 
 @pytest.mark.asyncio
+async def test_session_end_for_unknown_session_emits_nothing(registry):
+    # SESSION_END for a session that was never tracked must not broadcast a
+    # redundant aggregate frame — nothing changed.
+    session_frame, agg_frame = await registry.handle_transition(
+        "never-seen", AimontState.OFF, HookEvent.SESSION_END
+    )
+    assert session_frame is None
+    assert agg_frame is None
+
+
 async def test_all_sessions_end_gives_off(registry):
     await registry.handle_transition("s1", AimontState.WORKING, HookEvent.USER_PROMPT_SUBMIT)
     await registry.handle_transition("s1", AimontState.OFF, HookEvent.SESSION_END)

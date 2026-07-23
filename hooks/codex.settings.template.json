@@ -1,25 +1,25 @@
 {
   "hooks": {
     "SessionStart": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py --agent codex"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py --agent codex"}]}
     ],
     "UserPromptSubmit": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py --agent codex"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py --agent codex"}]}
     ],
     "Stop": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py --agent codex"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py --agent codex"}]}
     ],
     "Notification": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py --agent codex"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py --agent codex"}]}
     ],
     "PreToolUse": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py --agent codex"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py --agent codex"}]}
     ],
     "PostToolUse": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py --agent codex"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py --agent codex"}]}
     ],
     "PermissionRequest": [
-      {"hooks": [{"type": "command", "command": "python3 ~/.claude-recall/hooks/emit.py --agent codex"}]}
+      {"hooks": [{"type": "command", "command": "python3 ~/.aimont/hooks/emit.py --agent codex"}]}
     ]
   }
 }

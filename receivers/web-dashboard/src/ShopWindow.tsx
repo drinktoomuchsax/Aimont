@@ -47,7 +47,7 @@ export default function SessionRow({ session }: Props) {
       {/* Line 1: state + duration info (spread across full width) */}
       <div className="p-line">
         <span className="p-left">
-          <span className="p-state" style={{ color: stateColor }}>● {STATE_DISPLAY[session.state]}</span>
+          <span className="p-state" style={{ color: stateColor }}>● {STATE_DISPLAY[session.state] ?? session.state}</span>
           {toolLine && <span className="p-tool">{toolLine}</span>}
         </span>
         <span className="p-right">

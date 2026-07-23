@@ -202,7 +202,7 @@ Every frame produced by a v2 daemon carries a `host` object identifying its orig
 | `display_name` | string \| null | Human-readable label. Purely cosmetic — never used for routing. |
 
 **Resolution order for `host_id`:**
-1. `CLAUDE_RECALL_HOST_ID` environment variable
+1. `AIMONT_HOST_ID` environment variable
 2. `host.id` in `config.yaml`
 3. `socket.gethostname()` (cached on first resolution)
 4. `unknown-host-<8-hex-suffix>` fallback — a per-instance random suffix
@@ -211,7 +211,7 @@ Every frame produced by a v2 daemon carries a `host` object identifying its orig
    so `host_id` remains stable for the lifetime of the daemon.
 
 **Resolution order for `display_name`:**
-1. `CLAUDE_RECALL_HOST_DISPLAY_NAME` environment variable
+1. `AIMONT_HOST_DISPLAY_NAME` environment variable
 2. `host.display_name` in `config.yaml`
 3. `null`
 
@@ -275,8 +275,8 @@ On startup, `PushTransport`:
 
 **Environment variables (simplest):**
 ```bash
-export CLAUDE_RECALL_UPSTREAM_URL=wss://recall.company.com/ingest
-export CLAUDE_RECALL_TOKEN=xxx   # optional, sent as Bearer token
+export AIMONT_UPSTREAM_URL=wss://recall.company.com/ingest
+export AIMONT_TOKEN=xxx   # optional, sent as Bearer token
 # Restart daemon.
 ```
 
@@ -343,8 +343,8 @@ Disabled by default so single-daemon deployments are not exposed to unauthentica
 
 **Environment variables (simplest):**
 ```bash
-export CLAUDE_RECALL_INGEST_ENABLED=1
-export CLAUDE_RECALL_INGEST_TOKENS=token-a,token-b   # optional allowlist
+export AIMONT_INGEST_ENABLED=1
+export AIMONT_INGEST_TOKENS=token-a,token-b   # optional allowlist
 ```
 
 **YAML config:**
@@ -366,7 +366,7 @@ ingest:
 
 ## Token-based Join (Schema v2, PR 4)
 
-For organization deployments, typing the upstream URL and bearer secret into config is friction. Schema v2 defines a **RecallToken** — a single opaque string that bundles everything a daemon needs to join an upstream, plus optional hints about who issued it.
+For organization deployments, typing the upstream URL and bearer secret into config is friction. Schema v2 defines a **AimontToken** — a single opaque string that bundles everything a daemon needs to join an upstream, plus optional hints about who issued it.
 
 A token looks like an opaque base64url blob:
 
@@ -405,9 +405,10 @@ aimont leave --yes  # scripted
 IT/admins generate tokens with:
 
 ```bash
+# Secret via env so it stays out of argv / shell history (or omit for a prompt).
+AIMONT_ISSUE_SECRET="$(openssl rand -hex 16)" \
 aimont issue \
   --upstream wss://recall.company.com/ingest \
-  --secret   "$(openssl rand -hex 16)" \
   --display-name "Default Display" \
   --issuer   "Acme Corp"
 ```
@@ -418,8 +419,8 @@ The resulting string goes in an onboarding email, Slack DM, or employee-facing w
 
 When the daemon starts, it resolves push credentials in this order — higher wins:
 
-1. `CLAUDE_RECALL_UPSTREAM_URL` env var (`CLAUDE_RECALL_TOKEN` is used as plain Bearer).
-2. `CLAUDE_RECALL_TOKEN` env var containing an encoded RecallToken.
+1. `AIMONT_UPSTREAM_URL` env var (`AIMONT_TOKEN` is used as plain Bearer).
+2. `AIMONT_TOKEN` env var containing an encoded AimontToken.
 3. `~/.config/aimont/token` file written by `aimont join`.
 4. Explicit `transports.push` block in `config.yaml`.
 
