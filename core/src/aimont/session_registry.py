@@ -159,8 +159,17 @@ class SessionRegistry:
             ]
             frames: list[StateFrame] = []
             for sid in expired:
-                sm = self._sessions.pop(sid)
+                # `expired` is built from _last_active; use a defaulted pop so a
+                # transient desync between _last_active and _sessions can't raise
+                # KeyError mid-loop and abort cleanup after some sessions were
+                # already removed from the sibling dicts (partial, inconsistent
+                # state). No StateMachine means nothing to emit an OFF frame for.
+                sm = self._sessions.pop(sid, None)
                 self._last_active.pop(sid, None)
+                if sm is None:
+                    self._metadata.pop(sid, None)
+                    self._agent_kinds.pop(sid, None)
+                    continue
                 meta = self._metadata.pop(sid, None)
                 agent_kind = self._agent_kinds.pop(sid, DEFAULT_AGENT_KIND)
                 previous = sm.effective_state
