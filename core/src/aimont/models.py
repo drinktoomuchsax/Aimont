@@ -3,11 +3,26 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import IntEnum, StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+
+def _ensure_aware_utc(v: datetime) -> datetime:
+    """Coerce a naive datetime to UTC so frame timestamps are always aware.
+
+    The daemon's own emits are already tz-aware UTC, but the /ingest relay
+    path validates peer-controlled JSON into these models, and pydantic parses
+    an offset-less ISO string (e.g. "2026-01-01T10:00:00") into a naive
+    datetime. Mixing naive and aware datetimes in any later arithmetic
+    (``datetime.now(utc) - frame.timestamp``) raises TypeError, so we assume
+    naive peer timestamps are UTC and attach the tzinfo here.
+    """
+    if v.tzinfo is None:
+        return v.replace(tzinfo=timezone.utc)
+    return v
 
 
 class HookEvent(StrEnum):
@@ -147,6 +162,8 @@ class StateFrame(BaseModel):
     durations: StateDurations | None = None
     timestamp: datetime
 
+    _tz_aware_timestamp = field_validator("timestamp")(_ensure_aware_utc)
+
 
 class AggregateFrame(BaseModel):
     """Aggregated state across all active sessions."""
@@ -173,6 +190,8 @@ class AggregateFrame(BaseModel):
             raise ValueError("breakdown counts must be non-negative")
         return v
 
+    _tz_aware_timestamp = field_validator("timestamp")(_ensure_aware_utc)
+
 
 class PresenceFrame(BaseModel):
     """Announces host online/offline status.
@@ -189,3 +208,5 @@ class PresenceFrame(BaseModel):
     status: Literal["online", "offline"]
     last_active_ago_ms: int | None = Field(default=None, ge=0)
     timestamp: datetime
+
+    _tz_aware_timestamp = field_validator("timestamp")(_ensure_aware_utc)
