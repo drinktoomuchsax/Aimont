@@ -141,6 +141,11 @@ class IngestConfig(BaseModel):
     # message_id dedup cache bounds.
     dedup_ttl_sec: float = 600.0
     dedup_max_size: int = 1000
+    # Seconds to wait for a peer's `hello` frame after the socket is accepted.
+    # Without a bound a peer that connects, authorizes, but never sends hello
+    # (broken client, half-open TCP, malicious probe) parks the receive
+    # coroutine — and its socket/task — indefinitely.
+    hello_timeout_sec: float = Field(default=10.0, gt=0)
 
 
 class AimontConfig(BaseModel):
