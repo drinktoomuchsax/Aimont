@@ -93,3 +93,31 @@ def test_daemon_accepts_valid_config_file(tmp_path):
         result = runner.invoke(app, ["daemon", "--config", str(good)])
     assert result.exit_code == 0
     run.assert_called_once()
+
+
+def test_daemon_binds_config_server_host_and_port(tmp_path):
+    """config.server.host/port must actually drive the uvicorn bind when the
+    matching CLI flags are left at their defaults — otherwise the validated
+    `server:` block is silently ignored and the daemon binds 127.0.0.1:8765."""
+    good = tmp_path / "ok.yaml"
+    good.write_text("server:\n  host: 0.0.0.0\n  port: 9000\n")
+    with patch("aimont.cli.uvicorn.run") as run:
+        result = runner.invoke(app, ["daemon", "--config", str(good)])
+    assert result.exit_code == 0
+    assert run.call_args.kwargs["host"] == "0.0.0.0"
+    assert run.call_args.kwargs["port"] == 9000
+
+
+def test_daemon_cli_flags_win_over_config_server(tmp_path):
+    """An explicit --host/--port on the command line must override config.server;
+    the config only fills a flag the user left at its default."""
+    good = tmp_path / "ok.yaml"
+    good.write_text("server:\n  host: 0.0.0.0\n  port: 9000\n")
+    with patch("aimont.cli.uvicorn.run") as run:
+        result = runner.invoke(
+            app,
+            ["daemon", "--config", str(good), "--host", "127.0.0.1", "--port", "7777"],
+        )
+    assert result.exit_code == 0
+    assert run.call_args.kwargs["host"] == "127.0.0.1"
+    assert run.call_args.kwargs["port"] == 7777
