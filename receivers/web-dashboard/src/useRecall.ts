@@ -94,6 +94,23 @@ export function snapshotSessions(
   return initial
 }
 
+// Merge the REST /sessions snapshot into the current sessions map, letting the
+// live WS stream win. The snapshot reflects daemon state at request time and
+// resolves asynchronously; by the time it lands, `onmessage` may already have
+// applied `session` frames for sessions the snapshot predates (a session that
+// started during the in-flight fetch, common right after connect/reconnect
+// since the daemon emits frames as soon as a subscriber attaches). A full
+// replace would clobber those live entries — a just-started idle session would
+// vanish until its next transition. Spreading `curr` last keeps the newer WS
+// value for overlapping keys; the snapshot only fills in sessions the stream
+// hasn't mentioned yet. Pure/exported for testing.
+export function mergeSnapshot(
+  curr: Record<string, SessionState>,
+  snapshot: Record<string, SessionState>,
+): Record<string, SessionState> {
+  return { ...snapshot, ...curr }
+}
+
 // Map a raw presence frame to a HostPresence entry. Exported for testing.
 export function presenceFromFrame(frame: {
   host?: { host_id?: string; display_name?: string }
@@ -145,7 +162,8 @@ export function useRecall() {
       fetch(`${API_BASE}/sessions`)
         .then(r => r.json())
         .then(data => {
-          setSessions(snapshotSessions(data.sessions))
+          const snap = snapshotSessions(data.sessions)
+          setSessions(curr => mergeSnapshot(curr, snap))
         })
         .catch(() => {})
 
