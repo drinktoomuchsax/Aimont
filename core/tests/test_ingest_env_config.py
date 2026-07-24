@@ -77,3 +77,26 @@ def test_env_can_override_yaml_to_disable(monkeypatch, tmp_path):
     monkeypatch.setenv("AIMONT_INGEST_ENABLED", "0")
     cfg = load_config()
     assert cfg.ingest.enabled is False
+
+
+def test_null_ingest_section_with_env_override(monkeypatch, tmp_path):
+    """A present-but-empty `ingest:` section parses to None. Applying an env
+    override must not crash with an uncaught TypeError (setdefault returns the
+    None), which would escape load_config's ConfigError contract."""
+    cfg_yaml = tmp_path / ".aimont.yaml"
+    cfg_yaml.write_text("ingest:\n")  # null section
+    monkeypatch.setenv("AIMONT_INGEST_ENABLED", "true")
+    cfg = load_config()
+    assert cfg.ingest.enabled is True
+
+
+def test_null_transports_section_with_push_env(monkeypatch, tmp_path):
+    """A present-but-empty `transports:` section parses to None. The push env
+    override must coerce it rather than raising an uncaught AttributeError."""
+    cfg_yaml = tmp_path / ".aimont.yaml"
+    cfg_yaml.write_text("transports:\n")  # null section
+    monkeypatch.setenv("AIMONT_UPSTREAM_URL", "https://example.com/ingest")
+    cfg = load_config()
+    push = cfg.transports["push"]
+    assert push.enabled is True
+    assert push.options["upstream_url"] == "https://example.com/ingest"

@@ -240,7 +240,12 @@ def _apply_push_env_overrides(merged: dict[str, Any]) -> None:
     if url is None:
         return
 
-    transports = merged.setdefault("transports", {})
+    # A present-but-null section (`transports:` on its own line) parses to None,
+    # so setdefault returns None rather than a dict. Coerce it before indexing —
+    # otherwise .get()/item-assignment below raises an uncaught AttributeError
+    # that escapes load_config's ConfigError contract.
+    transports = merged.get("transports") or {}
+    merged["transports"] = transports
     existing = transports.get("push")
     if existing is None:
         transports["push"] = {
@@ -340,7 +345,11 @@ def _apply_ingest_env_overrides(merged: dict[str, Any]) -> None:
         # Don't silently misinterpret garbage values.
         return
 
-    ingest = merged.setdefault("ingest", {})
+    # A present-but-null `ingest:` section parses to None, so setdefault returns
+    # None rather than a dict. Coerce it before item-assignment — otherwise this
+    # raises an uncaught TypeError that escapes load_config's ConfigError contract.
+    ingest = merged.get("ingest") or {}
+    merged["ingest"] = ingest
     ingest["enabled"] = enabled
 
     if not enabled:
