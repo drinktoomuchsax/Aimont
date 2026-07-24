@@ -155,6 +155,20 @@ def daemon(
 
     if config:
         os.environ["AIMONT_CONFIG"] = str(config)
+        # Validate the config up front. Otherwise it isn't read until much
+        # later, inside uvicorn's ASGI lifespan hook (server.load_config), where
+        # a missing path or a malformed/invalid file surfaces as a full uvicorn
+        # lifespan traceback + "Application startup failed" instead of the clean
+        # exit-2 every other bad-argument path here produces (--port,
+        # --log-level). A typo'd path or a YAML indentation slip is a common
+        # user mistake, so fail fast with a one-line message.
+        from aimont.config import ConfigError, load_config
+
+        try:
+            load_config(config)
+        except (FileNotFoundError, ConfigError) as exc:
+            typer.echo(f"Invalid --config {str(config)!r}: {exc}", err=True)
+            raise typer.Exit(2) from exc
 
     level = log_level.lower()
     valid = {"critical", "error", "warning", "info", "debug", "trace"}
