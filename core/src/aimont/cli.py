@@ -231,6 +231,19 @@ def watch(
             reason = (e.reason or "connection closed by daemon").strip()
             typer.echo(f"Connection closed: {reason}", err=True)
             raise typer.Exit(1)
+        except websockets.exceptions.InvalidHandshake:
+            # Something is listening but it isn't a WebSocket daemon — a plain
+            # HTTP server or a different service on this port answers the
+            # upgrade with a non-WS response (InvalidMessage/InvalidStatus).
+            # Mirror the sibling commands' clean "wrong port?" exit instead of
+            # dumping a websockets traceback.
+            typer.echo("Unexpected response from daemon (wrong port?).", err=True)
+            raise typer.Exit(1)
+        except OSError as e:
+            # Network-level failure (host unreachable, DNS, reset) that isn't a
+            # plain connection-refused.
+            typer.echo(f"Could not reach daemon: {e}", err=True)
+            raise typer.Exit(1)
         except KeyboardInterrupt:
             pass
 

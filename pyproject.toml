@@ -33,6 +33,17 @@ testpaths = ["core/tests"]
 # The daemon and the test uvicorn servers select ws="websockets-sansio",
 # avoiding uvicorn's deprecated websockets.legacy path — so no ignores are
 # needed here. A new warning should be a signal, not silenced.
+#
+# The two ResourceWarning ignores below are the sole exception: pytest_asyncio
+# leaves its per-test event loops (and their selector sockets) unclosed at
+# teardown, and CPython only emits the ResourceWarning when the garbage
+# collector reclaims them. With `error` alone, that GC can land during session
+# teardown, where pytest's unraisableexception plugin wraps it into a fatal
+# ExceptionGroup — a flaky, GC-timing-dependent failure unrelated to our code.
+# Scope the ignore tightly to the unclosed-loop/socket messages so genuine
+# ResourceWarnings from aimont still fail the build.
 filterwarnings = [
     "error",
+    "ignore:unclosed event loop:ResourceWarning",
+    "ignore:unclosed <socket:ResourceWarning",
 ]
