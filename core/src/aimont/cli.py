@@ -140,6 +140,7 @@ def format_watch_frame(frame: dict) -> str:
 
 @app.command()
 def daemon(
+    ctx: typer.Context,
     host: str = typer.Option("127.0.0.1", help="Bind address"),
     port: int = typer.Option(8765, help="Bind port", callback=_validate_port),
     config: Path | None = typer.Option(None, help="Config file path"),
@@ -165,10 +166,23 @@ def daemon(
         from aimont.config import ConfigError, load_config
 
         try:
-            load_config(config)
+            loaded = load_config(config)
         except (FileNotFoundError, ConfigError) as exc:
             typer.echo(f"Invalid --config {str(config)!r}: {exc}", err=True)
             raise typer.Exit(2) from exc
+
+        # Honor config.server for the bind address/port. These are consumed
+        # here (by uvicorn) rather than inside server.py's load_config like the
+        # other sections, so without this the validated `server:` block would be
+        # silently ignored and the daemon would always bind the CLI defaults.
+        # An explicit CLI flag still wins; the config only fills a flag the user
+        # left at its default.
+        from click.core import ParameterSource
+
+        if ctx.get_parameter_source("host") == ParameterSource.DEFAULT:
+            host = loaded.server.host
+        if ctx.get_parameter_source("port") == ParameterSource.DEFAULT:
+            port = loaded.server.port
 
     level = log_level.lower()
     valid = {"critical", "error", "warning", "info", "debug", "trace"}
