@@ -509,4 +509,138 @@ describe('useRecall session frame handling', () => {
     expect(result.current.sessions['a']).toBeDefined()
     expect(result.current.sessions['b']).toBeUndefined() // ghost pruned
   })
+
+  it('discards a stale /state response from a superseded connection', async () => {
+    // Cross-connection race: connection 1 opens and dispatches GET /state, which
+    // stays in flight. The WS drops (but HTTP still works — idle-WS-resetting
+    // tunnel/LB, or a daemon that restarts only its WS server) and connection 2
+    // opens, hydrating its own aggregate to 'working'. Connection 2 has NOT
+    // received a live aggregate frame, so aggregateFromWsRef is false — the only
+    // thing that can stop connection 1's stale /state ('idle') from clobbering
+    // connection 2's value is the per-connection generation guard.
+    let resolveState1: (v: unknown) => void = () => {}
+    let stateCall = 0
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/state')) {
+        stateCall += 1
+        if (stateCall === 1) {
+          return new Promise(res => {
+            resolveState1 = res
+          })
+        }
+        // Connection 2's /state resolves immediately.
+        return Promise.resolve({
+          json: () =>
+            Promise.resolve({ state: 'working', active_sessions: 2, breakdown: { working: 2 } }),
+        })
+      }
+      // /sessions — resolve empty immediately for both connections.
+      return Promise.resolve({ json: () => Promise.resolve({ sessions: {} }) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { result } = renderHook(() => useRecall())
+    const ws1 = FakeWebSocket.instances[0]
+
+    // Connection 1 opens; its /state fetch is left pending.
+    await act(async () => {
+      ws1.onopen?.()
+    })
+
+    // Socket drops; the hook reconnects (real timers, 1s backoff).
+    await act(async () => {
+      ws1.onclose?.()
+      await new Promise(res => setTimeout(res, 1100))
+    })
+    const ws2 = FakeWebSocket.instances[1]
+    expect(ws2).toBeDefined()
+
+    // Connection 2 opens and hydrates its aggregate from /state ('working').
+    await act(async () => {
+      ws2.onopen?.()
+    })
+    expect(result.current.aggregate.state).toBe('working')
+    expect(result.current.aggregate.activeSessions).toBe(2)
+
+    // Now connection 1's stale /state finally resolves — it must be discarded,
+    // not overwrite connection 2's fresher value.
+    await act(async () => {
+      resolveState1({
+        json: () => Promise.resolve({ state: 'idle', active_sessions: 0, breakdown: {} }),
+      })
+    })
+
+    expect(result.current.aggregate.state).toBe('working')
+    expect(result.current.aggregate.activeSessions).toBe(2)
+  })
+
+  it('discards a stale /sessions snapshot from a superseded connection', async () => {
+    // Same cross-connection race on the sessions path: connection 1's /sessions
+    // stays in flight across a reconnect. Connection 2 opens, sees a live
+    // session `n` (recorded in the new connection's seenLiveRef), and its own
+    // snapshot resolves. When connection 1's stale snapshot (which predates `n`)
+    // finally lands, the generation guard must drop it — otherwise its
+    // mergeSnapshot prune would delete `n` (absent from the stale snapshot AND,
+    // because the refs were reset on reconnect, evaluated against the wrong
+    // seenLive set).
+    let resolveSessions1: (v: unknown) => void = () => {}
+    let sessionsCall = 0
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/sessions')) {
+        sessionsCall += 1
+        if (sessionsCall === 1) {
+          return new Promise(res => {
+            resolveSessions1 = res
+          })
+        }
+        return Promise.resolve({ json: () => Promise.resolve({ sessions: {} }) })
+      }
+      return Promise.resolve({
+        json: () => Promise.resolve({ state: 'off', active_sessions: 0, breakdown: {} }),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { result } = renderHook(() => useRecall())
+    const ws1 = FakeWebSocket.instances[0]
+
+    await act(async () => {
+      ws1.onopen?.()
+    })
+
+    await act(async () => {
+      ws1.onclose?.()
+      await new Promise(res => setTimeout(res, 1100))
+    })
+    const ws2 = FakeWebSocket.instances[1]
+    expect(ws2).toBeDefined()
+
+    await act(async () => {
+      ws2.onopen?.()
+    })
+
+    // A live session arrives on connection 2.
+    act(() => {
+      ws2.deliver({
+        type: 'session',
+        session_id: 'n',
+        state: 30, // working
+        previous: 10,
+        timestamp: '2026-07-24T00:00:00+00:00',
+      })
+    })
+    expect(result.current.sessions['n']).toBeDefined()
+
+    // Connection 1's stale snapshot (predates `n`) resolves — must be discarded,
+    // so `n` survives.
+    await act(async () => {
+      resolveSessions1({
+        json: () => Promise.resolve({ sessions: { old: { state: 'working' } } }),
+      })
+    })
+
+    expect(result.current.sessions['n']).toBeDefined()
+    // The stale snapshot's own session must not be seeded either.
+    expect(result.current.sessions['old']).toBeUndefined()
+  })
 })

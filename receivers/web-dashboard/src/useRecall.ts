@@ -219,6 +219,17 @@ export function useRecall() {
   // this set is a stale panel left over from before a reconnect (drop it).
   // Reset in onopen so each (re)connection reasons only about its own frames.
   const seenLiveRef = useRef<Set<string>>(new Set())
+  // Monotonic connection generation, bumped in each onopen. The onopen resets
+  // above (aggregateFromWsRef, endedDuringFetchRef, seenLiveRef) are per-
+  // connection, but the /sessions and /state fetch `.then` closures read them
+  // at RESOLUTION time — which can be after a later reconnect has already reset
+  // them. A response belonging to connection N then runs against connection
+  // N+1's refs: N's stale snapshot prunes N+1's snapshot-only sessions, and N's
+  // stale /state overwrites the topbar because N+1's aggregateFromWsRef was
+  // reset. Realistic when the WS drops but HTTP stays alive (idle-WS-resetting
+  // tunnel/LB, or a daemon that restarts only its WS server). Each fetch
+  // captures the generation at dispatch and bails if it no longer matches.
+  const connGenRef = useRef(0)
 
   const connect = useCallback(() => {
     const ws = new WebSocket(WS_URL)
@@ -235,10 +246,16 @@ export function useRecall() {
       // ...and forget which sessions were seen live under the prior connection,
       // so the ghost prune reasons only about this connection's frames.
       seenLiveRef.current = new Set()
+      // Claim this connection's generation; the fetch closures below compare
+      // against it so a response that resolves after a reconnect is discarded.
+      const gen = ++connGenRef.current
       // Fetch initial state
       fetch(`${API_BASE}/sessions`)
         .then(r => r.json())
         .then(data => {
+          // A later reconnect superseded this fetch — its snapshot is stale and
+          // would prune the new connection's sessions. Drop it.
+          if (connGenRef.current !== gen) return
           const snap = snapshotSessions(data.sessions)
           setSessions(curr =>
             mergeSnapshot(curr, snap, endedDuringFetchRef.current, seenLiveRef.current),
@@ -249,6 +266,9 @@ export function useRecall() {
       fetch(`${API_BASE}/state`)
         .then(r => r.json())
         .then(data => {
+          // Superseded by a later reconnect — a stale /state would overwrite
+          // the newer connection's aggregate (whose WS-wins flag was reset).
+          if (connGenRef.current !== gen) return
           // A live aggregate frame may have arrived while this fetch was in
           // flight; it's fresher than the request-time snapshot, so don't
           // clobber it. Only seed the aggregate if the WS hasn't spoken yet.
