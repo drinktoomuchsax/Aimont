@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 from aimont.config import RuleConfig
 from aimont.models import HookEvent, AimontState
@@ -36,7 +36,14 @@ class RuleEngine:
         # many concurrent sessions, so keying on the event alone would let one
         # session's event throttle an unrelated session's genuine event of the
         # same type within the window, silently dropping the latter's transition.
-        self._last_fired: dict[tuple[str | None, str], datetime] = {}
+        #
+        # Timestamps are time.monotonic() seconds, not wall-clock datetimes: a
+        # backward wall-clock step (NTP correction, VM resume) would make the
+        # elapsed-since-last-fire delta negative, which reads as "still within
+        # the window" and silently drops a legitimate event until the clock
+        # climbs back. monotonic() never goes backward, matching how
+        # message_cache and the /ingest handler deliberately avoid datetime.now.
+        self._last_fired: dict[tuple[str | None, str], float] = {}
 
     def resolve(
         self, event: HookEvent, session_id: str | None = None
@@ -52,7 +59,7 @@ class RuleEngine:
                 continue
             if self._is_debounced(rule, session_id):
                 return DEBOUNCED
-            self._last_fired[(session_id, rule.event)] = datetime.now(timezone.utc)
+            self._last_fired[(session_id, rule.event)] = time.monotonic()
             return RuleResult(state=state_from_name(rule.state), force=rule.force)
         return None
 
@@ -77,5 +84,5 @@ class RuleEngine:
         last = self._last_fired.get((session_id, rule.event))
         if last is None:
             return False
-        elapsed_ms = (datetime.now(timezone.utc) - last).total_seconds() * 1000
+        elapsed_ms = (time.monotonic() - last) * 1000
         return elapsed_ms < rule.debounce_ms

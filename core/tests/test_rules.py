@@ -132,6 +132,38 @@ def test_debounce_state_does_not_leak_across_sessions():
     assert engine._last_fired == {}
 
 
+def test_debounce_window_is_measured_on_monotonic_clock(monkeypatch):
+    """The debounce window must be measured against time.monotonic(), not the
+    wall clock.
+
+    A wall-clock reference (datetime.now) is vulnerable to a backward step (NTP
+    correction, VM resume): the elapsed-since-last-fire delta goes negative,
+    reads as "still inside the window", and silently drops a legitimate event
+    until the clock climbs back. monotonic() never goes backward. This test
+    pins the fix by driving the module's monotonic clock directly: advancing it
+    past the window expires the debounce with no real sleep. Against the old
+    wall-clock code the patch is inert, the second event fires within real
+    milliseconds, and the assertion below fails."""
+    clock = {"now": 1000.0}
+    monkeypatch.setattr("aimont.rules.time.monotonic", lambda: clock["now"])
+
+    rules = [RuleConfig(event="PreToolUse", state="tool_active", debounce_ms=2000)]
+    engine = RuleEngine(rules)
+
+    first = engine.resolve(HookEvent.PRE_TOOL_USE, "s1")
+    assert first.state == AimontState.TOOL_ACTIVE
+
+    # A second event just inside the window is still debounced...
+    clock["now"] += 1.0  # 1s < 2s window
+    assert engine.resolve(HookEvent.PRE_TOOL_USE, "s1") is DEBOUNCED
+
+    # ...and one past the window (measured purely on the monotonic clock we
+    # control) transitions again.
+    clock["now"] += 2.0  # now 3s since first fire, > 2s window
+    second = engine.resolve(HookEvent.PRE_TOOL_USE, "s1")
+    assert second.state == AimontState.TOOL_ACTIVE
+
+
 @pytest.mark.asyncio
 async def test_debounce_expires():
     rules = [RuleConfig(event="PreToolUse", state="tool_active", debounce_ms=100)]
