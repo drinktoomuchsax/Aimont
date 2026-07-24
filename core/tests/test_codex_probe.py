@@ -97,6 +97,37 @@ def test_vanished_process_emits_session_end(probe, captured_posts):
     assert 2222 not in probe._tracked
 
 
+def test_pid_reuse_ends_old_session_and_starts_new(probe, captured_posts):
+    """If a codex proc exits and the OS reuses its pid for a NEW codex proc
+    within one poll interval, the probe must end the dead session and start a
+    fresh one — not silently keep charging the new proc under the old
+    session_id. create_time (embedded in session_id) is what distinguishes them.
+    """
+    old = FakeProc(pid=3333, create_time=1_000_000.0)
+    with (
+        patch.object(codex_probe, "_is_codex_cli", return_value=True),
+        patch.object(codex_probe.psutil, "process_iter", return_value=[old]),
+    ):
+        probe.tick()
+    assert captured_posts == [{"event": "SessionStart", "session_id": "codex-3333-1000000"}]
+    captured_posts.clear()
+
+    # Same pid, different create_time → a different process reusing the number.
+    new = FakeProc(pid=3333, create_time=2_000_000.0)
+    with (
+        patch.object(codex_probe, "_is_codex_cli", return_value=True),
+        patch.object(codex_probe.psutil, "process_iter", return_value=[new]),
+    ):
+        probe.tick()
+
+    assert captured_posts == [
+        {"event": "SessionEnd", "session_id": "codex-3333-1000000"},
+        {"event": "SessionStart", "session_id": "codex-3333-2000000"},
+    ]
+    assert probe._tracked[3333].create_time == 2_000_000.0
+    assert probe._tracked[3333].session_id == "codex-3333-2000000"
+
+
 def test_busy_cpu_emits_user_prompt_submit(probe, captured_posts):
     proc = FakeProc(pid=3333)
     with (
