@@ -144,6 +144,26 @@ async def test_ingest_rejects_wrong_token():
         assert ei.value.response.status_code in (401, 403)
 
 
+async def test_ingest_rejects_non_ascii_token_cleanly():
+    """A Bearer token with a non-ASCII byte must produce a clean auth
+    rejection, not an unhandled server-side TypeError.
+
+    hmac.compare_digest raises TypeError on a str with non-ASCII chars, and
+    the token comes straight from the peer-controlled Authorization header.
+    Since _authorize_ingest runs before ws.accept() and outside the handler's
+    try, a str compare would let an unauthenticated peer crash the endpoint
+    with one non-ASCII byte instead of getting the 4401/403 rejection."""
+    cfg = _default_config(ingest_enabled=True, allowed_tokens=["secret"])
+    async with _running_daemon(cfg) as (_, base):
+        with pytest.raises(websockets.exceptions.InvalidStatus) as ei:
+            async with websockets.connect(
+                f"{base}/ingest",
+                additional_headers={"Authorization": "Bearer tökén-🔑"},
+            ):
+                pass
+        assert ei.value.response.status_code in (401, 403)
+
+
 async def test_ingest_accepts_correct_token_and_hello():
     cfg = _default_config(ingest_enabled=True, allowed_tokens=["secret"])
     async with _running_daemon(cfg) as (_, base):
