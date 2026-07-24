@@ -187,6 +187,25 @@ class CodexProbe:
         now = time.time()
         found = self._discover()
 
+        # 0. PID reuse: a tracked pid whose create_time no longer matches the
+        # discovered process is a DIFFERENT process reusing the number (the old
+        # one exited and the OS handed the pid to a new codex proc within one
+        # poll interval). Without this guard, step 1 would skip it (pid already
+        # tracked) and step 2 would not fire (pid still in `found`), so the new
+        # process would be silently tracked under the dead one's session_id and
+        # its CPU charged to the wrong session. End the stale session here so
+        # step 1 then treats the pid as a genuinely new process.
+        for pid, proc in found.items():
+            tracked = self._tracked.get(pid)
+            if tracked is None:
+                continue
+            try:
+                if proc.create_time() != tracked.create_time:
+                    self._tracked.pop(pid)
+                    _post(self.daemon_url, "SessionEnd", tracked.session_id)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
         # 1. New processes -> SessionStart
         for pid, proc in found.items():
             if pid in self._tracked:
