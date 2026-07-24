@@ -386,6 +386,44 @@ async def test_non_dict_hello_closes_connection_cleanly(scalar_hello):
             assert ei.value.rcvd.code == 4400
 
 
+async def test_binary_hello_closes_connection_cleanly():
+    """A binary frame where a JSON hello is expected must produce the clean
+    4400 close, not crash the handler. ws.receive_text() does message["text"],
+    which raises KeyError (not WebSocketDisconnect) on a binary frame — that
+    would escape _handle_ingest unhandled instead of the 4400 the other
+    malformed-hello branches produce."""
+    cfg = _default_config(ingest_enabled=True)
+    async with _running_daemon(cfg) as (_, base):
+        async with websockets.connect(f"{base}/ingest") as ws:
+            await ws.send(b"\x00\x01\x02")  # binary, not text
+            with pytest.raises(websockets.exceptions.ConnectionClosed) as ei:
+                await asyncio.wait_for(ws.recv(), 2.0)
+            assert ei.value.rcvd.code == 4400
+
+
+async def test_binary_frame_in_main_loop_is_skipped():
+    """After a valid hello, a binary frame in the main loop must be skipped
+    (connection stays open, subsequent text frames still relayed), not crash
+    the handler with a KeyError."""
+    cfg = _default_config(ingest_enabled=True)
+    async with _running_daemon(cfg) as (_, base):
+        async with websockets.connect(f"{base}/ws?mode=all") as viewer:
+            async with websockets.connect(f"{base}/ingest") as ingest_ws:
+                await ingest_ws.send(
+                    json.dumps({"type": "hello", "host": {"host_id": "downstream"}})
+                )
+                await asyncio.wait_for(viewer.recv(), 2.0)  # online presence
+
+                # A binary frame mid-stream — should be skipped, not fatal.
+                await ingest_ws.send(b"\xff\xfe")
+
+                # A real frame after it must still get through.
+                good = _make_state_frame()
+                await ingest_ws.send(good.model_dump_json())
+                relayed = json.loads(await asyncio.wait_for(viewer.recv(), 2.0))
+                assert relayed["session_id"] == "s1"
+
+
 async def test_ingest_closes_when_hello_never_arrives():
     """A peer that authorizes and gets accepted but never sends its hello
     frame must be closed after hello_timeout_sec, not parked forever."""
