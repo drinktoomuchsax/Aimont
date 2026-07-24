@@ -440,9 +440,18 @@ def _authorize_ingest(ws: WebSocket, allowed_tokens: list[str]) -> bool:
     # short-circuiting `any`) leaks token contents through response timing;
     # compare_digest is timing-safe, and we OR all results without early
     # exit so the number of comparisons doesn't depend on the input either.
+    #
+    # Compare bytes, not str: hmac.compare_digest raises TypeError on a str
+    # containing any non-ASCII character, and `token` comes straight from the
+    # peer-controlled Authorization header. A str compare would let an
+    # unauthenticated peer force an unhandled TypeError (this runs before
+    # ws.accept() and outside _handle_ingest's try) with a single non-ASCII
+    # byte instead of getting the clean 4401 close. Encoding both sides keeps
+    # the constant-time, no-early-exit property and never raises.
+    token_b = token.encode("utf-8")
     matched = False
     for allowed in allowed_tokens:
-        if hmac.compare_digest(token, allowed):
+        if hmac.compare_digest(token_b, allowed.encode("utf-8")):
             matched = True
     return matched
 
