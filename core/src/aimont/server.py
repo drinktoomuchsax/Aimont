@@ -533,6 +533,14 @@ async def _handle_ingest(fastapi_app: FastAPI, ws: WebSocket) -> None:
             await ws.close(code=4400)  # bad request
             return
 
+        # Valid JSON that isn't an object (e.g. 123, "hi", [1,2], true) would
+        # make the .get()/"in" checks below raise AttributeError/TypeError,
+        # which escapes the handler as an unhandled exception instead of the
+        # clean 4400 close. Mirror the isinstance guard in _parse_ingest_frame.
+        if not isinstance(hello, dict):
+            await ws.close(code=4400)
+            return
+
         if hello.get("type") != "hello" or "host" not in hello:
             await ws.close(code=4400)
             return
