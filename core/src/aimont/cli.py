@@ -59,6 +59,32 @@ def _validate_poll(value: float) -> float:
     return value
 
 
+def _validate_busy_cpu(value: float) -> float:
+    """Reject a non-positive CPU% threshold for the codex probe.
+
+    codex_probe treats `cpu >= busy_threshold` as "working"; since summed CPU%
+    is always >= 0, a threshold of 0 (or negative) marks every tick busy,
+    pinning the session to `working` and never emitting Stop. Fail clean at the
+    CLI, matching how --poll/--port are validated (CodexProbe itself doesn't
+    clamp this — poll_sec is the only floored option).
+    """
+    if value <= 0:
+        raise typer.BadParameter(f"busy-cpu must be greater than 0 (got {value})")
+    return value
+
+
+def _validate_idle_after(value: float) -> float:
+    """Reject a non-positive idle window for the codex probe.
+
+    codex_probe emits Stop once `quiet_for >= idle_after_sec`; a value of 0 (or
+    negative) fires Stop on the very first quiet tick, dropping a working
+    session to `awaiting_input` with no dwell. Fail clean at the CLI.
+    """
+    if value <= 0:
+        raise typer.BadParameter(f"idle-after must be greater than 0 (got {value})")
+    return value
+
+
 def _version_callback(value: bool) -> None:
     if value:
         from aimont import __version__
@@ -345,8 +371,12 @@ def sessions(
 def codex_probe(
     port: int = typer.Option(8765, help="Daemon port", callback=_validate_port),
     poll: float = typer.Option(2.0, help="Poll interval (seconds)", callback=_validate_poll),
-    busy_cpu: float = typer.Option(10.0, help="CPU%% threshold that counts as 'working'"),
-    idle_after: float = typer.Option(6.0, help="Seconds of quiet CPU before emitting Stop"),
+    busy_cpu: float = typer.Option(
+        10.0, help="CPU%% threshold that counts as 'working'", callback=_validate_busy_cpu
+    ),
+    idle_after: float = typer.Option(
+        6.0, help="Seconds of quiet CPU before emitting Stop", callback=_validate_idle_after
+    ),
 ):
     """Watch for Codex CLI processes and report their state to the daemon."""
     from aimont.codex_probe import CodexProbe
