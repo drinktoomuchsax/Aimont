@@ -41,3 +41,21 @@ def test_codex_probe_rejects_nonpositive_poll(bad_poll):
     result = runner.invoke(app, ["codex-probe", "--poll", bad_poll])
     assert result.exit_code == 2
     assert "greater than 0" in result.output
+
+
+@pytest.mark.parametrize("bad_busy_cpu", ["0", "-1", "-5.5"])
+def test_codex_probe_rejects_nonpositive_busy_cpu(bad_busy_cpu):
+    # busy_threshold <= 0 marks every tick "working" (summed CPU% is always
+    # >= 0), so the probe never emits Stop. Reject at parse time, exit 2.
+    result = runner.invoke(app, ["codex-probe", "--busy-cpu", bad_busy_cpu])
+    assert result.exit_code == 2
+    assert "busy-cpu must be greater than 0" in result.output
+
+
+@pytest.mark.parametrize("bad_idle_after", ["0", "-1", "-0.5"])
+def test_codex_probe_rejects_nonpositive_idle_after(bad_idle_after):
+    # idle_after_sec <= 0 fires Stop on the first quiet tick (no dwell), so a
+    # working session immediately degrades to awaiting_input. Reject, exit 2.
+    result = runner.invoke(app, ["codex-probe", "--idle-after", bad_idle_after])
+    assert result.exit_code == 2
+    assert "idle-after must be greater than 0" in result.output
