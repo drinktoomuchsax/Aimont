@@ -127,3 +127,43 @@ def test_wrongtype_transports_section_with_push_env(monkeypatch, tmp_path, bad):
     monkeypatch.setenv("AIMONT_UPSTREAM_URL", "https://example.com/ingest")
     with pytest.raises(ConfigError):
         load_config()
+
+
+@pytest.mark.parametrize("bad", ["transports:\n  push: 5\n", "transports:\n  push: foo\n"])
+def test_wrongtype_push_entry_with_push_env(monkeypatch, tmp_path, bad):
+    """A wrong-typed `push` transport ENTRY (one hop below the section) must
+    also surface as a ConfigError under the push env override. The section-level
+    guard coerces `transports`, but `transports.get("push")` returning a non-dict
+    (5/"foo") skips the init branch and then item-assignment (`existing["type"]
+    = ...`) raises an uncaught TypeError escaping load_config's ConfigError
+    contract. Without the override the same config fails cleanly at
+    model_validate (TransportConfig expects a mapping)."""
+    cfg_yaml = tmp_path / ".aimont.yaml"
+    cfg_yaml.write_text(bad)
+    monkeypatch.setenv("AIMONT_UPSTREAM_URL", "https://example.com/ingest")
+    with pytest.raises(ConfigError):
+        load_config()
+
+
+@pytest.mark.parametrize("bad_opts", ["foo", "5"])
+def test_wrongtype_push_options_with_push_env(monkeypatch, tmp_path, bad_opts):
+    """A wrong-typed `options` sub-map on the push entry must surface as a
+    ConfigError, not a TypeError from `options["upstream_url"] = url`. The
+    old setdefault returned the existing non-dict value unchanged."""
+    cfg_yaml = tmp_path / ".aimont.yaml"
+    cfg_yaml.write_text(f"transports:\n  push:\n    type: push\n    options: {bad_opts}\n")
+    monkeypatch.setenv("AIMONT_UPSTREAM_URL", "https://example.com/ingest")
+    with pytest.raises(ConfigError):
+        load_config()
+
+
+def test_null_push_entry_with_push_env_is_coerced(monkeypatch, tmp_path):
+    """A present-but-null `push:` entry (parses to None) must be coerced to a
+    working push transport, not raise — mirrors the null-section handling."""
+    cfg_yaml = tmp_path / ".aimont.yaml"
+    cfg_yaml.write_text("transports:\n  push:\n")  # null entry
+    monkeypatch.setenv("AIMONT_UPSTREAM_URL", "https://example.com/ingest")
+    cfg = load_config()
+    push = cfg.transports["push"]
+    assert push.enabled is True
+    assert push.options["upstream_url"] == "https://example.com/ingest"

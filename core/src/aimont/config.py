@@ -254,14 +254,14 @@ def _apply_push_env_overrides(merged: dict[str, Any]) -> None:
     # only the falsy (None) case, so check the type explicitly and surface the
     # same ConfigError the no-override path would.
     transports = _coerce_section(merged, "transports")
-    existing = transports.get("push")
-    if existing is None:
-        transports["push"] = {
-            "type": "push",
-            "enabled": True,
-            "options": {"upstream_url": url},
-        }
-        existing = transports["push"]
+    # The `push` entry and its `options` sub-map need the same guard as the
+    # section above: a wrong-typed `push: 5` (or `options: "foo"`) is skipped by
+    # the `is None` check, then item-assignment below raises an uncaught
+    # TypeError that escapes load_config's ConfigError contract. _coerce_section
+    # coerces a null/absent value to {} (written back) and raises a clean
+    # ConfigError on any other non-dict — matching what model_validate would
+    # produce without the env override.
+    existing = _coerce_section(transports, "push")
 
     # Supplying credentials via env / token file is an explicit request to push,
     # so force the transport on even if config.yaml had `enabled: false` —
@@ -269,7 +269,7 @@ def _apply_push_env_overrides(merged: dict[str, Any]) -> None:
     # _apply_ingest_env_overrides flips `enabled` from the environment.
     existing["type"] = "push"
     existing["enabled"] = True
-    options = existing.setdefault("options", {})
+    options = _coerce_section(existing, "options")
     options["upstream_url"] = url
     if auth:
         options["auth_token"] = auth
