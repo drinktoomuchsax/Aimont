@@ -269,6 +269,78 @@ describe('useRecall session frame handling', () => {
     expect(result.current.sessions['s-fwd'].state).toBe('unknown')
   })
 
+  it('keeps a live WS aggregate that arrives before the /state fetch resolves', async () => {
+    // Reconnect race (same class as the mergeSnapshot fix for sessions):
+    // onopen kicks off GET /state, but the daemon emits an aggregate frame as
+    // soon as a subscriber attaches. If the live frame lands first, the older
+    // /state response must NOT overwrite it.
+    let resolveState: (v: unknown) => void = () => {}
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/state')) {
+        return new Promise(res => {
+          resolveState = res
+        })
+      }
+      // /sessions — resolve empty immediately.
+      return Promise.resolve({ json: () => Promise.resolve({ sessions: {} }) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { result } = renderHook(() => useRecall())
+    const ws = FakeWebSocket.instances[0]
+
+    // Connection opens; onopen dispatches the /state fetch (still pending).
+    await act(async () => {
+      ws.onopen?.()
+    })
+
+    // A live aggregate frame arrives while /state is in flight.
+    act(() => {
+      ws.deliver({
+        type: 'aggregate',
+        state: 30, // working
+        active_sessions: 3,
+        breakdown: { working: 3 },
+      })
+    })
+    expect(result.current.aggregate.state).toBe('working')
+    expect(result.current.aggregate.activeSessions).toBe(3)
+
+    // Now the stale /state response resolves — it must be ignored.
+    await act(async () => {
+      resolveState({
+        json: () => Promise.resolve({ state: 'idle', active_sessions: 0, breakdown: {} }),
+      })
+    })
+
+    expect(result.current.aggregate.state).toBe('working')
+    expect(result.current.aggregate.activeSessions).toBe(3)
+  })
+
+  it('still hydrates the aggregate from /state when no WS frame has arrived', async () => {
+    // The guard must not block the normal path: if no aggregate frame lands
+    // before /state resolves, the REST snapshot seeds the initial value.
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/state')) {
+        return Promise.resolve({
+          json: () => Promise.resolve({ state: 'idle', active_sessions: 2, breakdown: { idle: 2 } }),
+        })
+      }
+      return Promise.resolve({ json: () => Promise.resolve({ sessions: {} }) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { result } = renderHook(() => useRecall())
+    const ws = FakeWebSocket.instances[0]
+
+    await act(async () => {
+      ws.onopen?.()
+    })
+
+    expect(result.current.aggregate.state).toBe('idle')
+    expect(result.current.aggregate.activeSessions).toBe(2)
+  })
+
   it('still deletes a session on a genuine off (code 0)', () => {
     const { result } = renderHook(() => useRecall())
     const ws = FakeWebSocket.instances[0]

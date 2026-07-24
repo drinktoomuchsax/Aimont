@@ -150,6 +150,18 @@ export function useRecall() {
   // opens a fresh socket on a dead tree — a leak guaranteed by StrictMode's
   // mount→unmount→remount in dev.
   const closedRef = useRef(false)
+  // True once a live `aggregate` WS frame has landed for the current
+  // connection. The REST /state fetch below reflects daemon state at
+  // request time and resolves asynchronously; the daemon emits an aggregate
+  // frame as soon as a subscriber attaches, so a fresher WS value can arrive
+  // before the older /state response resolves. Without this guard the stale
+  // response would blindly overwrite the live aggregate (the topbar summary
+  // then shows request-time state until the next aggregate change, which only
+  // emits on change — so a wrong summary can persist while things are quiet).
+  // Same "live WS wins" race mergeSnapshot fixes for the per-session snapshot;
+  // the aggregate is a single value, so a boolean flag suffices. Reset in
+  // onopen so each (re)connection re-hydrates from REST until its first frame.
+  const aggregateFromWsRef = useRef(false)
 
   const connect = useCallback(() => {
     const ws = new WebSocket(WS_URL)
@@ -158,6 +170,9 @@ export function useRecall() {
     ws.onopen = () => {
       setConnected(true)
       backoffRef.current = 1000 // reset backoff on a successful connection
+      // A fresh connection hasn't seen a live aggregate frame yet, so allow
+      // the REST /state fetch below to hydrate the initial value.
+      aggregateFromWsRef.current = false
       // Fetch initial state
       fetch(`${API_BASE}/sessions`)
         .then(r => r.json())
@@ -170,6 +185,10 @@ export function useRecall() {
       fetch(`${API_BASE}/state`)
         .then(r => r.json())
         .then(data => {
+          // A live aggregate frame may have arrived while this fetch was in
+          // flight; it's fresher than the request-time snapshot, so don't
+          // clobber it. Only seed the aggregate if the WS hasn't spoken yet.
+          if (aggregateFromWsRef.current) return
           setAggregate({
             state: data.state,
             activeSessions: data.active_sessions,
@@ -194,6 +213,9 @@ export function useRecall() {
           setHosts(curr => ({ ...curr, [presence.hostId]: presence }))
         }
       } else if (frame.type === 'aggregate') {
+        // Mark that the live stream has produced an aggregate so a slower
+        // in-flight /state fetch won't overwrite it with stale data.
+        aggregateFromWsRef.current = true
         setAggregate({
           state: resolveState(frame.state),
           activeSessions: frame.active_sessions,
