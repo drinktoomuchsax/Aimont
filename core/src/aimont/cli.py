@@ -182,33 +182,46 @@ def daemon(
 
     if config:
         os.environ["AIMONT_CONFIG"] = str(config)
-        # Validate the config up front. Otherwise it isn't read until much
-        # later, inside uvicorn's ASGI lifespan hook (server.load_config), where
-        # a missing path or a malformed/invalid file surfaces as a full uvicorn
-        # lifespan traceback + "Application startup failed" instead of the clean
-        # exit-2 every other bad-argument path here produces (--port,
-        # --log-level). A typo'd path or a YAML indentation slip is a common
-        # user mistake, so fail fast with a one-line message.
-        from aimont.config import ConfigError, load_config
 
-        try:
-            loaded = load_config(config)
-        except (FileNotFoundError, ConfigError) as exc:
-            typer.echo(f"Invalid --config {str(config)!r}: {exc}", err=True)
-            raise typer.Exit(2) from exc
+    # Load the config up front, whether it came from --config, AIMONT_CONFIG, or
+    # the default search path. Two reasons:
+    #
+    # 1. server.host/port must drive the uvicorn bind. These are consumed here
+    #    (by uvicorn) rather than inside server.py's load_config like the other
+    #    sections, so without this the validated `server:` block would be
+    #    silently ignored and the daemon would always bind the CLI defaults. The
+    #    lifespan hook DOES honor a default-path config for every other section
+    #    (host/states/transports/ingest), so gating this on `--config` alone
+    #    made the two paths disagree: `aimont daemon` with a
+    #    ~/.config/aimont/config.yaml would apply that file's transports but
+    #    ignore its server.host/port. An explicit CLI flag still wins; the
+    #    config only fills a flag the user left at its default.
+    #
+    # 2. Validate early. Otherwise the config isn't read until much later, inside
+    #    uvicorn's ASGI lifespan hook (server.load_config), where a missing path
+    #    or a malformed/invalid file surfaces as a full uvicorn lifespan
+    #    traceback + "Application startup failed" instead of the clean exit-2
+    #    every other bad-argument path here produces (--port, --log-level). A
+    #    typo'd path or a YAML indentation slip is a common user mistake, so fail
+    #    fast with a one-line message.
+    from aimont.config import ConfigError, load_config
 
-        # Honor config.server for the bind address/port. These are consumed
-        # here (by uvicorn) rather than inside server.py's load_config like the
-        # other sections, so without this the validated `server:` block would be
-        # silently ignored and the daemon would always bind the CLI defaults.
-        # An explicit CLI flag still wins; the config only fills a flag the user
-        # left at its default.
-        from click.core import ParameterSource
+    try:
+        loaded = load_config(config)
+    except (FileNotFoundError, ConfigError) as exc:
+        # A missing FILE only happens for an explicit --config (the default
+        # search silently skips absent candidates), so the more specific
+        # message applies there; otherwise a malformed default-path config.
+        where = f"--config {str(config)!r}" if config else "config file"
+        typer.echo(f"Invalid {where}: {exc}", err=True)
+        raise typer.Exit(2) from exc
 
-        if ctx.get_parameter_source("host") == ParameterSource.DEFAULT:
-            host = loaded.server.host
-        if ctx.get_parameter_source("port") == ParameterSource.DEFAULT:
-            port = loaded.server.port
+    from click.core import ParameterSource
+
+    if ctx.get_parameter_source("host") == ParameterSource.DEFAULT:
+        host = loaded.server.host
+    if ctx.get_parameter_source("port") == ParameterSource.DEFAULT:
+        port = loaded.server.port
 
     level = log_level.lower()
     valid = {"critical", "error", "warning", "info", "debug", "trace"}

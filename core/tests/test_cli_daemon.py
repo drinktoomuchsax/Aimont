@@ -108,6 +108,35 @@ def test_daemon_binds_config_server_host_and_port(tmp_path):
     assert run.call_args.kwargs["port"] == 9000
 
 
+def test_daemon_binds_config_server_without_explicit_config_flag(tmp_path, monkeypatch):
+    """A config found without `--config` (here via AIMONT_CONFIG, the same
+    path-is-None branch the default search takes) must still drive the bind.
+    Regression: the bind wiring was gated inside `if config:`, so `aimont
+    daemon` with only a default-path/AIMONT_CONFIG config honored every other
+    section (the lifespan reads them) but silently ignored server.host/port."""
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("server:\n  host: 0.0.0.0\n  port: 9100\n")
+    monkeypatch.setenv("AIMONT_CONFIG", str(cfg))
+    with patch("aimont.cli.uvicorn.run") as run:
+        result = runner.invoke(app, ["daemon"])
+    assert result.exit_code == 0
+    assert run.call_args.kwargs["host"] == "0.0.0.0"
+    assert run.call_args.kwargs["port"] == 9100
+
+
+def test_daemon_reports_invalid_default_path_config(tmp_path, monkeypatch):
+    """A malformed config found without `--config` must still fail fast with a
+    clean exit-2, not a uvicorn lifespan traceback."""
+    bad = tmp_path / "config.yaml"
+    bad.write_text("server: 5\n")
+    monkeypatch.setenv("AIMONT_CONFIG", str(bad))
+    with patch("aimont.cli.uvicorn.run") as run:
+        result = runner.invoke(app, ["daemon"])
+    assert result.exit_code == 2
+    run.assert_not_called()
+    assert "Invalid config file" in result.output
+
+
 def test_daemon_cli_flags_win_over_config_server(tmp_path):
     """An explicit --host/--port on the command line must override config.server;
     the config only fills a flag the user left at its default."""
