@@ -84,6 +84,19 @@ def test_out_of_range_port_raises_config_error(tmp_path):
     assert "validation" in str(ei.value)
 
 
+def test_config_path_that_is_a_directory_raises_config_error(tmp_path):
+    """A --config (or default-search) path that EXISTS but is a directory — e.g.
+    pointing at `~/.config/aimont/` instead of `.../config.yaml`, a common
+    tab-completion slip — must fail with a clean ConfigError, not an
+    IsADirectoryError traceback. The path.exists() guard passes, so open()
+    raises IsADirectoryError (an OSError, not FileNotFoundError); without
+    catching it here it escapes load_config and the daemon command's
+    `except (FileNotFoundError, ConfigError)`."""
+    with pytest.raises(ConfigError) as ei:
+        load_config(path=tmp_path)
+    assert str(tmp_path) in str(ei.value)
+
+
 def test_valid_state_names_still_load(tmp_path):
     """Guard against over-eager validation: a correctly-named state/degrade_to
     (including case-insensitive) must still load."""
