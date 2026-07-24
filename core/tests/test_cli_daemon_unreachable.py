@@ -70,3 +70,32 @@ def test_sessions_http_error_status_is_handled():
         result = runner.invoke(app, ["sessions"])
     assert result.exit_code == 1
     assert "error status: 503" in result.output
+
+
+def test_status_non_object_json_body_is_handled():
+    """A foreign JSON service can return valid JSON that isn't an object (a
+    list/scalar); data.get(...) would raise an uncaught AttributeError. It must
+    map to the clean "wrong port?" exit, not a traceback."""
+    with patch("httpx.get", return_value=_response(200, json_body=[1, 2, 3])):
+        result = runner.invoke(app, ["status"])
+    assert result.exit_code == 1
+    assert "not JSON" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_sessions_non_object_json_body_is_handled():
+    with patch("httpx.get", return_value=_response(200, json_body=[1, 2, 3])):
+        result = runner.invoke(app, ["sessions"])
+    assert result.exit_code == 1
+    assert "not JSON" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_sessions_wrong_shape_sessions_value_is_handled():
+    """A body shaped {"sessions": [...]} (list, not mapping) would crash
+    .items(); treat it as the wrong-port case."""
+    with patch("httpx.get", return_value=_response(200, json_body={"sessions": [1, 2]})):
+        result = runner.invoke(app, ["sessions"])
+    assert result.exit_code == 1
+    assert "not JSON" in result.output
+    assert "Traceback" not in result.output
