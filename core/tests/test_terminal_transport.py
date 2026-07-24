@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from datetime import datetime, timezone
 
 import pytest
@@ -92,3 +94,49 @@ async def test_bell_rings_on_change_between_distinct_attention_states(monkeypatc
 
     bells = captured_stdout.count("\007")
     assert bells == 2, f"expected two bells for two distinct states, got {bells}"
+
+
+async def test_blocking_stdout_does_not_stall_the_event_loop(monkeypatch):
+    """A flow-controlled TTY makes stdout.write block. Because send_aggregate is
+    awaited inside the broadcast path, a blocking write must be offloaded off the
+    event loop — otherwise it freezes every other transport and the cascade.
+
+    We make write() block until an Event is set, then prove a concurrent
+    coroutine still makes progress while the write is in flight.
+    """
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+
+    release = threading.Event()
+    write_started = threading.Event()
+
+    def blocking_write(_s: str) -> None:
+        write_started.set()
+        # Block the calling thread until released. If this ran on the event
+        # loop thread, the whole loop would hang here.
+        release.wait(timeout=5.0)
+
+    monkeypatch.setattr("sys.stdout.write", blocking_write)
+    monkeypatch.setattr("sys.stdout.flush", lambda: None)
+
+    t = TerminalTransport("terminal", {})
+    send = asyncio.ensure_future(t.send_aggregate(_agg(AimontState.AWAITING_PERMISSION)))
+
+    # Wait until the write is actually in progress (on a worker thread).
+    for _ in range(500):
+        if write_started.is_set():
+            break
+        await asyncio.sleep(0.001)
+    assert write_started.is_set(), "write never started"
+
+    # The loop is still live: this coroutine runs even though the write blocks.
+    progressed = False
+    for _ in range(5):
+        await asyncio.sleep(0.001)
+        progressed = True
+    assert progressed
+
+    # send is still pending because the blocking write hasn't been released.
+    assert not send.done()
+
+    release.set()
+    await asyncio.wait_for(send, timeout=5.0)

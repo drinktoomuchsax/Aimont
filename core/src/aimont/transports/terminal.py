@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from typing import Any
 
@@ -51,7 +52,7 @@ class TerminalTransport(BaseTransport):
 
     async def stop(self) -> None:
         if self._title_enabled:
-            self._set_title("")
+            await self._set_title("")
 
     async def send(self, frame: StateFrame | PresenceFrame) -> None:
         # Terminal only reflects aggregate state in the title/bell; per-session
@@ -63,18 +64,30 @@ class TerminalTransport(BaseTransport):
             label = STATE_LABELS.get(frame.state, "")
             if frame.active_sessions > 1:
                 label = f"{label} [{frame.active_sessions} sessions]"
-            self._set_title(label)
+            await self._set_title(label)
 
         # Ring only when we newly enter a bell state. Staying in one (while the
         # aggregate is re-emitted for unrelated session changes) must stay quiet.
         if self._bell_enabled and frame.state in BELL_STATES and frame.state != self._last_state:
-            self._ring_bell()
+            await self._ring_bell()
         self._last_state = frame.state
 
-    def _set_title(self, title: str) -> None:
-        sys.stdout.write(f"\033]0;{title}\007")
-        sys.stdout.flush()
+    async def _set_title(self, title: str) -> None:
+        await self._write(f"\033]0;{title}\007")
 
-    def _ring_bell(self) -> None:
-        sys.stdout.write("\007")
+    async def _ring_bell(self) -> None:
+        await self._write("\007")
+
+    async def _write(self, payload: str) -> None:
+        # stdout.write + flush are synchronous and block when the TTY consumer
+        # applies flow control (a paused terminal, a slow/backed-up pipe). This
+        # runs inside the awaited aggregate-broadcast path, so a blocking write
+        # would stall the event loop — freezing every other transport plus the
+        # push/ingest cascade. Offload to a worker thread so backpressure on the
+        # terminal never wedges the daemon.
+        await asyncio.to_thread(self._write_sync, payload)
+
+    @staticmethod
+    def _write_sync(payload: str) -> None:
+        sys.stdout.write(payload)
         sys.stdout.flush()
