@@ -46,3 +46,36 @@ def test_watch_network_error_reports_cleanly():
     assert result.exit_code == 1
     assert "Could not reach daemon" in result.output
     assert "Traceback" not in result.output
+
+
+class _FakeWs:
+    """Minimal async-context-manager / async-iterator standing in for a
+    websockets connection that completes the handshake then streams frames."""
+
+    def __init__(self, messages):
+        self._messages = list(messages)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self._messages:
+            raise StopAsyncIteration
+        return self._messages.pop(0)
+
+
+def test_watch_non_json_frame_reports_cleanly():
+    """A service that handshakes as a WebSocket but streams a non-JSON text
+    frame (wrong port, or a broken peer) must exit 1 cleanly rather than dump a
+    JSONDecodeError traceback out of json.loads()."""
+    with patch("websockets.connect", return_value=_FakeWs(["not json at all"])):
+        result = runner.invoke(app, ["watch"])
+    assert result.exit_code == 1
+    assert "not JSON" in result.output
+    assert "Traceback" not in result.output
