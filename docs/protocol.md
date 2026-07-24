@@ -4,7 +4,7 @@
 
 Aimont broadcasts **state frames** to all connected consumers whenever Claude Code's state changes. It supports multiple concurrent sessions and provides both per-session and aggregated state views.
 
-Consumers (lights, apps, widgets) connect via WebSocket or receive frames through push transports (serial, MQTT, HTTP webhook).
+Consumers (lights, apps, widgets) connect via WebSocket, or the daemon pushes frames out to them through the `push` transport (an outbound WebSocket to an upstream daemon) or the `webhook` transport (HTTP POST). Serial and MQTT transports are planned, not yet implemented.
 
 ## Versioning
 
@@ -602,13 +602,16 @@ Response:
 
 ## Push Transport Frame Format
 
-For push-type transports (serial, MQTT), frames are sent as compact JSON lines terminated by `\n`:
+The `push` transport opens an **outbound WebSocket** to an upstream daemon's
+`/ingest` endpoint and sends each frame as a compact JSON text message
+(`frame.model_dump_json()`), one frame per WebSocket message:
 
 ```
-{"schema_version":2,"type":"aggregate","message_id":"abc-123","host":{"host_id":"zhang-mbp"},"forwarded_by":[],"state":60,"active_sessions":1,"breakdown":{"awaiting_input":1},"timestamp":"2026-05-08T12:00:00Z"}\n
+{"schema_version":2,"type":"aggregate","message_id":"abc-123","host":{"host_id":"zhang-mbp"},"forwarded_by":[],"state":60,"active_sessions":1,"breakdown":{"awaiting_input":1},"timestamp":"2026-05-08T12:00:00Z"}
 ```
 
-Serial transports use 115200 baud, 8N1 by default.
+Serial and MQTT push transports (newline-framed byte streams for IoT devices)
+are planned but not yet implemented.
 
 ## Webhook Transport
 
