@@ -235,6 +235,28 @@ describe('mergeSnapshot', () => {
     expect(merged.y).toBeDefined()
     expect(merged.y.state).toBe('working')
   })
+
+  it('drops a tombstoned session so a lost off-frame cannot resurrect it', () => {
+    // Session y ended during the in-flight fetch: its off-frame was a no-op in
+    // reduceSessionFrame (y not yet in curr), so it lives on only in the
+    // tombstone set. The snapshot (taken before y ended) still lists it; the
+    // merge must NOT re-add it as a ghost panel.
+    const live = { x: mkSession('x', 'idle') }
+    const snap = snapshotSessions({ x: { state: 'idle' }, y: { state: 'working' } })
+    const merged = mergeSnapshot(live, snap, new Set(['y']))
+    expect(merged.x).toBeDefined()
+    expect(merged.y).toBeUndefined()
+  })
+
+  it('still keeps a live session even if it is tombstoned (WS wins)', () => {
+    // A tombstone only suppresses the snapshot fill; a session present in curr
+    // (e.g. it went off then restarted, back in the live map) must survive.
+    const live = { y: mkSession('y', 'working') }
+    const snap = snapshotSessions({ y: { state: 'idle' } })
+    const merged = mergeSnapshot(live, snap, new Set(['y']))
+    expect(merged.y).toBeDefined()
+    expect(merged.y.state).toBe('working')
+  })
 })
 
 describe('useRecall session frame handling', () => {
@@ -366,5 +388,53 @@ describe('useRecall session frame handling', () => {
       })
     })
     expect(result.current.sessions['s-live']).toBeUndefined()
+  })
+
+  it('does not resurrect a session that ended during the in-flight /sessions fetch', async () => {
+    // Reconnect race: onopen kicks off GET /sessions (which the daemon answered
+    // with session g as live at request time). While it's in flight, g ends and
+    // its off-frame arrives — a no-op in reduceSessionFrame since g isn't in the
+    // map yet. When the stale snapshot lands it must NOT re-add g as a ghost.
+    let resolveSessions: (v: unknown) => void = () => {}
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/sessions')) {
+        return new Promise(res => {
+          resolveSessions = res
+        })
+      }
+      // /state — resolve empty immediately.
+      return Promise.resolve({
+        json: () => Promise.resolve({ state: 'off', active_sessions: 0, breakdown: {} }),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { result } = renderHook(() => useRecall())
+    const ws = FakeWebSocket.instances[0]
+
+    await act(async () => {
+      ws.onopen?.()
+    })
+
+    // g ends while the /sessions fetch is still pending.
+    act(() => {
+      ws.deliver({
+        type: 'session',
+        session_id: 'g',
+        state: 0, // off
+        previous: 30,
+        timestamp: '2026-07-24T00:00:00+00:00',
+      })
+    })
+    expect(result.current.sessions['g']).toBeUndefined()
+
+    // The stale snapshot (g was live at request time) resolves — g must stay gone.
+    await act(async () => {
+      resolveSessions({
+        json: () => Promise.resolve({ sessions: { g: { state: 'working' } } }),
+      })
+    })
+
+    expect(result.current.sessions['g']).toBeUndefined()
   })
 })
