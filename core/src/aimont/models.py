@@ -51,16 +51,22 @@ class SessionMetadata(BaseModel):
 
 
 class StateDurations(BaseModel):
-    """Cumulative time spent in each state (seconds)."""
+    """Cumulative time spent in each state (seconds).
 
-    off: float = 0.0
-    idle: float = 0.0
-    working: float = 0.0
-    tool_active: float = 0.0
-    awaiting_input: float = 0.0
-    awaiting_permission: float = 0.0
-    notification: float = 0.0
-    error: float = 0.0
+    Durations are elapsed wall time and can never be negative; the daemon's
+    own accounting already clamps to >= 0 (state_machine._elapsed_since_set).
+    ge=0 codifies that invariant so a buggy/hostile peer can't relay a negative
+    duration through /ingest to local dashboards.
+    """
+
+    off: float = Field(default=0.0, ge=0)
+    idle: float = Field(default=0.0, ge=0)
+    working: float = Field(default=0.0, ge=0)
+    tool_active: float = Field(default=0.0, ge=0)
+    awaiting_input: float = Field(default=0.0, ge=0)
+    awaiting_permission: float = Field(default=0.0, ge=0)
+    notification: float = Field(default=0.0, ge=0)
+    error: float = Field(default=0.0, ge=0)
 
 
 DEFAULT_AGENT_KIND = "claude"
@@ -135,7 +141,7 @@ class StateFrame(BaseModel):
     agent_kind: str = DEFAULT_AGENT_KIND
     state: AimontState
     previous: AimontState
-    duration: float | None = None
+    duration: float | None = Field(default=None, ge=0)
     triggered_by: HookEvent | None = None
     metadata: SessionMetadata | None = None
     durations: StateDurations | None = None
@@ -153,9 +159,19 @@ class AggregateFrame(BaseModel):
     host: HostIdentity | None = None
     forwarded_by: list[str] = Field(default_factory=list)
     state: AimontState
-    active_sessions: int
+    active_sessions: int = Field(ge=0)
     breakdown: dict[str, int]
     timestamp: datetime
+
+    @field_validator("breakdown")
+    @classmethod
+    def _non_negative_counts(cls, v: dict[str, int]) -> dict[str, int]:
+        # Per-state session counts are lengths and can never be negative. The
+        # daemon builds these from len(); ge=0 here closes the /ingest relay
+        # path where a peer's JSON is trusted into this model.
+        if any(count < 0 for count in v.values()):
+            raise ValueError("breakdown counts must be non-negative")
+        return v
 
 
 class PresenceFrame(BaseModel):
@@ -171,5 +187,5 @@ class PresenceFrame(BaseModel):
     host: HostIdentity
     forwarded_by: list[str] = Field(default_factory=list)
     status: Literal["online", "offline"]
-    last_active_ago_ms: int | None = None
+    last_active_ago_ms: int | None = Field(default=None, ge=0)
     timestamp: datetime
