@@ -75,8 +75,19 @@ export interface HostPresence {
   displayName?: string
   status: 'online' | 'offline'
   // ms since the host was last active, when known (offline frames from a
-  // disconnected /ingest peer). null/undefined otherwise.
+  // disconnected /ingest peer). null/undefined otherwise. This is a snapshot
+  // taken at frame-receive time; prefer lastActiveAt for a label that stays
+  // accurate as real time passes.
   lastActiveAgoMs?: number | null
+  // Absolute instant the host was last active, anchored to the browser clock
+  // at frame-receive time (receiveTime - lastActiveAgoMs). Deriving the "last
+  // seen" label from `now - lastActiveAt` lets it keep counting up on a timer
+  // instead of freezing at the age the frame happened to carry. Anchoring to
+  // the local receive time (rather than the daemon-stamped frame timestamp)
+  // means we only ever add locally-measured elapsed time to the daemon's
+  // ago_ms snapshot, so daemon<->browser clock skew can't distort the label.
+  // null when the age is unknown (online hosts, or offline frames without it).
+  lastActiveAt?: Date | null
   lastChange: Date
 }
 
@@ -123,6 +134,18 @@ export function formatLastSeen(ms?: number | null): string | null {
   const h = Math.floor(m / 60)
   if (h < 24) return `${h}h ago`
   return `${Math.floor(h / 24)}d ago`
+}
+
+/** "Last seen" label from an absolute last-active instant, measured against
+ *  `now`. Unlike passing a frozen ago-ms into formatLastSeen, this recomputes
+ *  the elapsed time each render so a ticking `now` keeps the label live. A
+ *  future lastActiveAt (clock quirk) clamps to 0s rather than reading null. */
+export function formatLastSeenSince(
+  lastActiveAt: Date | null | undefined,
+  now: Date,
+): string | null {
+  if (lastActiveAt == null) return null
+  return formatLastSeen(Math.max(0, now.getTime() - lastActiveAt.getTime()))
 }
 
 export const STATE_COLORS: Record<string, string> = {
