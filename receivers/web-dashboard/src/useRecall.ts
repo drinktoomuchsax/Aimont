@@ -103,12 +103,26 @@ export function snapshotSessions(
 // replace would clobber those live entries — a just-started idle session would
 // vanish until its next transition. Spreading `curr` last keeps the newer WS
 // value for overlapping keys; the snapshot only fills in sessions the stream
-// hasn't mentioned yet. Pure/exported for testing.
+// hasn't mentioned yet.
+//
+// The mirror hazard: a session the snapshot still lists can END during the same
+// in-flight fetch. Its `off` frame reaches reduceSessionFrame before the
+// snapshot lands, where `sid not in curr` makes it a no-op (nothing to delete
+// yet), so the frame is lost — then the snapshot re-adds the dead session as a
+// permanent ghost panel until the ~300s cleanup. `tombstoned` carries the ids
+// that went off during the fetch window; those are dropped from the snapshot
+// fill so a lost off-frame can't resurrect them. Pure/exported for testing.
 export function mergeSnapshot(
   curr: Record<string, SessionState>,
   snapshot: Record<string, SessionState>,
+  tombstoned: ReadonlySet<string> = new Set(),
 ): Record<string, SessionState> {
-  return { ...snapshot, ...curr }
+  const filled: Record<string, SessionState> = {}
+  for (const [id, session] of Object.entries(snapshot)) {
+    if (tombstoned.has(id)) continue
+    filled[id] = session
+  }
+  return { ...filled, ...curr }
 }
 
 // Map a raw presence frame to a HostPresence entry. Exported for testing.
@@ -174,6 +188,12 @@ export function useRecall() {
   // the aggregate is a single value, so a boolean flag suffices. Reset in
   // onopen so each (re)connection re-hydrates from REST until its first frame.
   const aggregateFromWsRef = useRef(false)
+  // Session ids that received an `off` frame while the /sessions snapshot was
+  // in flight. Such a frame is a no-op in reduceSessionFrame (the session isn't
+  // in the map yet), so without recording it the about-to-land snapshot would
+  // re-add the now-dead session as a ghost panel. Consumed by mergeSnapshot to
+  // drop these from the snapshot fill. Reset in onopen (a fresh fetch starts).
+  const endedDuringFetchRef = useRef<Set<string>>(new Set())
 
   const connect = useCallback(() => {
     const ws = new WebSocket(WS_URL)
@@ -185,12 +205,14 @@ export function useRecall() {
       // A fresh connection hasn't seen a live aggregate frame yet, so allow
       // the REST /state fetch below to hydrate the initial value.
       aggregateFromWsRef.current = false
+      // A fresh fetch is starting; forget tombstones from the prior connection.
+      endedDuringFetchRef.current = new Set()
       // Fetch initial state
       fetch(`${API_BASE}/sessions`)
         .then(r => r.json())
         .then(data => {
           const snap = snapshotSessions(data.sessions)
-          setSessions(curr => mergeSnapshot(curr, snap))
+          setSessions(curr => mergeSnapshot(curr, snap, endedDuringFetchRef.current))
         })
         .catch(() => {})
 
@@ -234,6 +256,12 @@ export function useRecall() {
           breakdown: frame.breakdown ?? {},
         })
       } else if (frame.type === 'session') {
+        // If this session just went off, record it: a snapshot fetch still in
+        // flight may list it as live and would otherwise re-add it as a ghost.
+        // (Harmless once the fetch has resolved — the set is reset each onopen.)
+        if (resolveState(frame.state) === 'off') {
+          endedDuringFetchRef.current.add(frame.session_id)
+        }
         setSessions(curr => reduceSessionFrame(curr, frame))
       }
     }
