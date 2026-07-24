@@ -79,6 +79,7 @@ def _default_config(
     ingest_enabled: bool = False,
     allowed_tokens: list[str] | None = None,
     host_id: str = "upstream-host",
+    hello_timeout_sec: float = 10.0,
 ) -> AimontConfig:
     """Minimal config for ingest tests — no transports by default."""
     return AimontConfig(
@@ -92,6 +93,7 @@ def _default_config(
         ingest=IngestConfig(
             enabled=ingest_enabled,
             allowed_tokens=allowed_tokens or [],
+            hello_timeout_sec=hello_timeout_sec,
         ),
     )
 
@@ -348,6 +350,20 @@ async def test_malformed_hello_closes_connection():
             # Server should close with a 4400-series code.
             with pytest.raises(websockets.exceptions.ConnectionClosed):
                 await asyncio.wait_for(ws.recv(), 2.0)
+
+
+async def test_ingest_closes_when_hello_never_arrives():
+    """A peer that authorizes and gets accepted but never sends its hello
+    frame must be closed after hello_timeout_sec, not parked forever."""
+    cfg = _default_config(ingest_enabled=True, hello_timeout_sec=0.2)
+    async with _running_daemon(cfg) as (_, base):
+        async with websockets.connect(f"{base}/ingest") as ws:
+            # Send nothing. The server should close the socket on timeout.
+            with pytest.raises(websockets.exceptions.ConnectionClosed) as ei:
+                # Comfortably longer than the 0.2s timeout, but far short of
+                # the "parks forever" bug this guards against.
+                await asyncio.wait_for(ws.recv(), 2.0)
+            assert ei.value.rcvd.code == 4408
 
 
 async def test_malformed_frame_does_not_drop_connection():

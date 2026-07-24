@@ -509,7 +509,15 @@ async def _handle_ingest(fastapi_app: FastAPI, ws: WebSocket) -> None:
     peer_host: HostIdentity | None = None
     last_activity: float | None = None
     try:
-        hello_raw = await ws.receive_text()
+        try:
+            # Bound the hello handshake: a peer that authorizes and gets
+            # accept()ed but never sends hello would otherwise park this
+            # coroutine (and its socket/task) forever, since keepalive pings
+            # are driven by the client. Close with 4408 (timeout) on expiry.
+            hello_raw = await asyncio.wait_for(ws.receive_text(), timeout=cfg.hello_timeout_sec)
+        except (asyncio.TimeoutError, TimeoutError):
+            await ws.close(code=4408)  # request timeout
+            return
         try:
             hello = json.loads(hello_raw)
         except json.JSONDecodeError:
