@@ -66,10 +66,19 @@ class TerminalTransport(BaseTransport):
                 label = f"{label} [{frame.active_sessions} sessions]"
             await self._set_title(label)
 
-        # Ring only when we newly enter a bell state. Staying in one (while the
-        # aggregate is re-emitted for unrelated session changes) must stay quiet.
-        if self._bell_enabled and frame.state in BELL_STATES and frame.state != self._last_state:
-            await self._ring_bell()
+        # Ring when we newly ENTER the attention band, or ESCALATE within it to
+        # a higher-severity state (a genuinely new, more urgent condition).
+        # Staying in one bell state (aggregate re-emitted for unrelated session
+        # changes) must stay quiet — and so must a *de-escalation* within the
+        # band: e.g. an ERROR clearing while another session still awaits
+        # permission drops the aggregate ERROR→AWAITING_PERMISSION, which is not
+        # a new event and must not re-alert. AimontState is an IntEnum ordered
+        # by severity, so `frame.state > self._last_state` is a strict escalation.
+        if self._bell_enabled and frame.state in BELL_STATES:
+            entered_band = self._last_state not in BELL_STATES
+            escalated = self._last_state is not None and frame.state > self._last_state
+            if entered_band or escalated:
+                await self._ring_bell()
         self._last_state = frame.state
 
     async def _set_title(self, title: str) -> None:

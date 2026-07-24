@@ -84,8 +84,9 @@ async def test_bell_rerings_after_leaving_and_reentering(monkeypatch, captured_s
     assert bells == 2, f"expected two bells across two entries, got {bells}"
 
 
-async def test_bell_rings_on_change_between_distinct_attention_states(monkeypatch, captured_stdout):
-    """Moving directly from one bell state to a different one is a new event."""
+async def test_bell_rings_on_escalation_between_attention_states(monkeypatch, captured_stdout):
+    """Moving UP to a higher-severity bell state is a genuinely new, more urgent
+    event — ring again (AWAITING_PERMISSION 80 → ERROR 100)."""
     monkeypatch.setattr("sys.stdout.isatty", lambda: True)
     t = TerminalTransport("terminal", {})
 
@@ -93,7 +94,23 @@ async def test_bell_rings_on_change_between_distinct_attention_states(monkeypatc
     await t.send_aggregate(_agg(AimontState.ERROR))
 
     bells = captured_stdout.count("\007")
-    assert bells == 2, f"expected two bells for two distinct states, got {bells}"
+    assert bells == 2, f"expected two bells for an escalation, got {bells}"
+
+
+async def test_bell_does_not_rering_on_de_escalation_within_band(monkeypatch, captured_stdout):
+    """A de-escalation within the attention band is NOT a new event. E.g. one
+    session errors while another awaits permission (aggregate=ERROR), then the
+    error clears while the permission request stands (aggregate drops back to
+    AWAITING_PERMISSION). The user was already alerted; ERROR→AWAITING_PERMISSION
+    must stay quiet rather than re-interrupt them."""
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    t = TerminalTransport("terminal", {})
+
+    await t.send_aggregate(_agg(AimontState.ERROR))  # rings (enters band)
+    await t.send_aggregate(_agg(AimontState.AWAITING_PERMISSION))  # descent — quiet
+
+    bells = captured_stdout.count("\007")
+    assert bells == 1, f"expected a single bell (no re-ring on descent), got {bells}"
 
 
 async def test_blocking_stdout_does_not_stall_the_event_loop(monkeypatch):
