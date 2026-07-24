@@ -11,7 +11,12 @@ Codex's hooks.json. Defaults to "claude" so existing installs keep working
 without touching their Claude Code settings.
 
 Requirements:
-- Complete in <500ms
+- Fast on the steady-state path: when the daemon is already up, the single
+  POST is bounded by TIMEOUT_SEC (<500ms). The rare cold-start path is slower
+  by design — if the first POST fails, we autostart the daemon (holding a lock
+  across the port-bind wait, BIND_WAIT_SEC) and retry once, so a genuine
+  cold start can block the host for a few seconds. That cost is paid at most
+  once per daemon lifetime, and only when nothing is listening yet.
 - Never fail in a way that blocks the host agent (always exit 0)
 - Dependency-free (uses only stdlib)
 """
