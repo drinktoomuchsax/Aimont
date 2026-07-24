@@ -55,6 +55,26 @@ def test_invalid_degrade_to_raises_config_error(tmp_path):
     assert "degrade_to" in str(ei.value)
 
 
+def test_negative_ttl_sec_raises_config_error(tmp_path):
+    """A negative states.<x>.ttl_sec must fail at load. Otherwise it validates
+    cleanly, then _charge_elapsed charges a negative amount to the state's
+    cumulative duration, which StateDurations (ge=0) rejects — an unhandled 500
+    on every subsequent event for a session in that state."""
+    bad = tmp_path / "config.yaml"
+    bad.write_text("states:\n  working:\n    ttl_sec: -1\n    degrade_to: idle\n", encoding="utf-8")
+    with pytest.raises(ConfigError) as ei:
+        load_config(path=bad)
+    assert "validation" in str(ei.value)
+
+
+def test_zero_ttl_sec_still_loads(tmp_path):
+    """ttl_sec: 0 is a valid 'degrade immediately' config, not an error."""
+    ok = tmp_path / "config.yaml"
+    ok.write_text("states:\n  working:\n    ttl_sec: 0\n    degrade_to: idle\n", encoding="utf-8")
+    cfg = load_config(path=ok)
+    assert cfg.states.working.ttl_sec == 0
+
+
 def test_out_of_range_port_raises_config_error(tmp_path):
     """server.port outside 1..65535 must fail at load, not be handed to uvicorn."""
     bad = tmp_path / "config.yaml"
