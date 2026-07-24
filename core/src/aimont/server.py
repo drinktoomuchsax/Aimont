@@ -395,7 +395,13 @@ def create_api(app_obj: App | None = None) -> FastAPI:
             return
         try:
             while True:
-                await ws.receive_text()
+                # Viewers don't send protocol data; we only read to detect a
+                # disconnect. Use the binary-tolerant receive: ws.receive_text()
+                # raises KeyError (not WebSocketDisconnect) on a stray binary
+                # frame from a browser/proxy, which would escape the
+                # except-WebSocketDisconnect below as an ASGI-level traceback.
+                # A None return is a non-text frame — ignore it and keep reading.
+                await _receive_ws_text(ws)
         except WebSocketDisconnect:
             pass
         finally:
@@ -456,18 +462,19 @@ def _authorize_ingest(ws: WebSocket, allowed_tokens: list[str]) -> bool:
     return matched
 
 
-async def _receive_ingest_text(ws: WebSocket) -> str | None:
-    """Receive one text frame from an ingest peer, tolerating binary frames.
+async def _receive_ws_text(ws: WebSocket) -> str | None:
+    """Receive one text frame from a WebSocket peer, tolerating binary frames.
 
     Starlette's ws.receive_text() does message["text"], which raises KeyError
     (not WebSocketDisconnect) when the peer sends a *binary* frame — the ASGI
     event is {"type": "websocket.receive", "bytes": ...} with no "text" key.
-    That KeyError would escape _handle_ingest unhandled (its try only catches
-    WebSocketDisconnect), bypassing all the hello hardening that turns bad peer
-    input into a clean close. Receive the raw message ourselves and return the
-    text, None for a binary frame (caller decides: close in the handshake,
-    skip in the main loop), and re-raise disconnects as WebSocketDisconnect so
-    the existing handling is preserved.
+    That KeyError would escape a handler whose try only catches
+    WebSocketDisconnect (both /ingest and the /ws viewer loop), turning a stray
+    non-text frame into an unhandled ASGI-level traceback. Receive the raw
+    message ourselves and return the text, None for a binary frame (caller
+    decides: close in the ingest handshake, skip in the ingest/viewer loop),
+    and re-raise disconnects as WebSocketDisconnect so existing handling is
+    preserved.
     """
     message = await ws.receive()
     if message["type"] == "websocket.disconnect":
@@ -555,9 +562,7 @@ async def _handle_ingest(fastapi_app: FastAPI, ws: WebSocket) -> None:
             # accept()ed but never sends hello would otherwise park this
             # coroutine (and its socket/task) forever, since keepalive pings
             # are driven by the client. Close with 4408 (timeout) on expiry.
-            hello_raw = await asyncio.wait_for(
-                _receive_ingest_text(ws), timeout=cfg.hello_timeout_sec
-            )
+            hello_raw = await asyncio.wait_for(_receive_ws_text(ws), timeout=cfg.hello_timeout_sec)
         except (asyncio.TimeoutError, TimeoutError):
             await ws.close(code=4408)  # request timeout
             return
@@ -604,7 +609,7 @@ async def _handle_ingest(fastapi_app: FastAPI, ws: WebSocket) -> None:
 
         # Main loop: receive frames until the peer disconnects.
         while True:
-            raw = await _receive_ingest_text(ws)
+            raw = await _receive_ws_text(ws)
             last_activity = time.monotonic()
             if raw is None:
                 # Binary frame — not part of the protocol; skip but keep the

@@ -252,6 +252,38 @@ async def test_relay_frame_is_broadcast_to_local_viewers():
                 assert "upstream-host" in relayed["forwarded_by"]
 
 
+async def test_ws_viewer_binary_frame_does_not_crash_endpoint():
+    """A /ws viewer that sends a stray BINARY frame must not crash the endpoint.
+
+    The viewer loop only reads to detect a disconnect. ws.receive_text() does
+    message["text"], which raises KeyError (not WebSocketDisconnect) on a binary
+    frame — the except-WebSocketDisconnect would let it escape as an ASGI-level
+    traceback and abruptly drop the socket. Same bug class already fixed for
+    /ingest. The connection must stay open and still receive relayed frames.
+    """
+    cfg = _default_config(ingest_enabled=True)
+    async with _running_daemon(cfg) as (_, base):
+        async with websockets.connect(f"{base}/ws?mode=all") as viewer:
+            # A stray binary frame from the viewer — must be ignored, not fatal.
+            await viewer.send(b"\x00\x01\x02")
+
+            async with websockets.connect(f"{base}/ingest") as ingest_ws:
+                await ingest_ws.send(
+                    json.dumps({"type": "hello", "host": {"host_id": "downstream"}})
+                )
+                # Online presence must still reach the viewer (socket alive).
+                online = json.loads(await asyncio.wait_for(viewer.recv(), 2.0))
+                assert online["type"] == "presence"
+                assert online["status"] == "online"
+
+                # A real frame after the binary one must still be relayed.
+                frame = _make_state_frame(session_id="sess-Y")
+                await ingest_ws.send(frame.model_dump_json())
+                relayed = json.loads(await asyncio.wait_for(viewer.recv(), 2.0))
+                assert relayed["type"] == "session"
+                assert relayed["session_id"] == "sess-Y"
+
+
 async def test_ws_invalid_mode_is_rejected():
     cfg = _default_config(ingest_enabled=True)
     async with _running_daemon(cfg) as (_, base):
