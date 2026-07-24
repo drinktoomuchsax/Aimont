@@ -432,7 +432,17 @@ def issue(
     upstream: str = typer.Option(
         ..., "--upstream", help="Upstream URL, e.g. wss://aimont.company.com/ingest"
     ),
-    secret: str = typer.Option(..., "--secret", help="Bearer secret the upstream expects"),
+    secret: str = typer.Option(
+        ...,
+        "--secret",
+        envvar="AIMONT_ISSUE_SECRET",
+        prompt="Bearer secret the upstream expects",
+        hide_input=True,
+        help=(
+            "Bearer secret the upstream expects. Prefer AIMONT_ISSUE_SECRET (env) "
+            "or the hidden prompt over --secret so it never lands in argv/shell history."
+        ),
+    ),
     display_name_hint: str | None = typer.Option(
         None, "--display-name", help="Optional hint shown on dashboards"
     ),

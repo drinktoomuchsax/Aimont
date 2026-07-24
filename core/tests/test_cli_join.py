@@ -67,6 +67,55 @@ def test_issue_prints_decodable_token(runner):
     assert bundle.issuer == "Acme"
 
 
+def test_issue_reads_secret_from_env(runner, monkeypatch):
+    """The documented secure workflow passes the bearer secret via
+    AIMONT_ISSUE_SECRET so it never lands in argv / shell history. Following the
+    docs verbatim (no --secret flag) must succeed and encode that env secret."""
+    monkeypatch.setenv("AIMONT_ISSUE_SECRET", "env-secret")
+    result = runner.invoke(
+        app,
+        ["issue", "--upstream", "wss://aimont.company.com/ingest", "--issuer", "Acme"],
+    )
+    assert result.exit_code == 0, result.output
+    from aimont.auth import decode_token
+
+    bundle = decode_token(result.output.strip())
+    assert bundle.auth_secret == "env-secret"
+
+
+def test_issue_prompts_for_secret_when_absent(runner, monkeypatch):
+    """With neither --secret nor the env var, the command must prompt (hidden)
+    rather than aborting — the docs offer 'omit it entirely for a hidden
+    prompt' as an alternative to the env var."""
+    monkeypatch.delenv("AIMONT_ISSUE_SECRET", raising=False)
+    result = runner.invoke(
+        app,
+        ["issue", "--upstream", "wss://aimont.company.com/ingest"],
+        input="prompted-secret\n",
+    )
+    assert result.exit_code == 0, result.output
+    from aimont.auth import decode_token
+
+    # The (hidden) prompt text precedes the token on stdout; the token is the
+    # last output line.
+    token = result.output.strip().splitlines()[-1]
+    bundle = decode_token(token)
+    assert bundle.auth_secret == "prompted-secret"
+
+
+def test_issue_flag_overrides_env(runner, monkeypatch):
+    """An explicit --secret must win over the env var (Typer precedence)."""
+    monkeypatch.setenv("AIMONT_ISSUE_SECRET", "env-secret")
+    result = runner.invoke(
+        app,
+        ["issue", "--upstream", "wss://x/ingest", "--secret", "flag-secret"],
+    )
+    assert result.exit_code == 0, result.output
+    from aimont.auth import decode_token
+
+    assert decode_token(result.output.strip()).auth_secret == "flag-secret"
+
+
 # ---- join ---------------------------------------------------------------
 
 
