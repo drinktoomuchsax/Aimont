@@ -5,7 +5,14 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from aimont.models import FRAME_SCHEMA_VERSION, AimontState, StateFrame
+from aimont.models import (
+    FRAME_SCHEMA_VERSION,
+    AggregateFrame,
+    AimontState,
+    HostIdentity,
+    PresenceFrame,
+    StateFrame,
+)
 from aimont.server import _parse_ingest_frame
 
 
@@ -14,6 +21,30 @@ def _state_frame_json(**overrides) -> str:
         session_id="s1",
         state=AimontState.WORKING,
         previous=AimontState.IDLE,
+        timestamp=datetime.now(timezone.utc),
+    )
+    data = json.loads(frame.model_dump_json())
+    data.update(overrides)
+    return json.dumps(data)
+
+
+def _aggregate_frame_json(**overrides) -> str:
+    frame = AggregateFrame(
+        state=AimontState.WORKING,
+        active_sessions=1,
+        breakdown={"working": 1},
+        timestamp=datetime.now(timezone.utc),
+    )
+    data = json.loads(frame.model_dump_json())
+    data.update(overrides)
+    return json.dumps(data)
+
+
+def _presence_frame_json(**overrides) -> str:
+    frame = PresenceFrame(
+        host=HostIdentity(host_id="h1"),
+        status="offline",
+        last_active_ago_ms=100,
         timestamp=datetime.now(timezone.utc),
     )
     data = json.loads(frame.model_dump_json())
@@ -78,3 +109,37 @@ def test_rejects_non_dict_json():
 def test_rejects_unparseable_and_unknown_type():
     assert _parse_ingest_frame("not json") is None
     assert _parse_ingest_frame(json.dumps({"type": "mystery"})) is None
+
+
+# ---- negative-value guards on the /ingest trust boundary -----------------
+# A peer's JSON is validated straight into these models and then relayed to
+# local viewers. Numeric fields the daemon only ever emits as >= 0 must reject
+# negatives so a buggy/hostile peer can't push nonsense onto dashboards.
+
+
+def test_rejects_negative_state_frame_duration():
+    assert _parse_ingest_frame(_state_frame_json(duration=-1.0)) is None
+
+
+def test_rejects_negative_state_frame_durations_breakdown():
+    raw = _state_frame_json(durations={"working": -5.0})
+    assert _parse_ingest_frame(raw) is None
+
+
+def test_rejects_negative_aggregate_active_sessions():
+    assert _parse_ingest_frame(_aggregate_frame_json(active_sessions=-1)) is None
+
+
+def test_rejects_negative_aggregate_breakdown_count():
+    raw = _aggregate_frame_json(breakdown={"working": -3})
+    assert _parse_ingest_frame(raw) is None
+
+
+def test_rejects_negative_presence_last_active_ago_ms():
+    assert _parse_ingest_frame(_presence_frame_json(last_active_ago_ms=-10)) is None
+
+
+def test_accepts_valid_aggregate_and_presence_frames():
+    """Sanity: the non-negative variants still parse to the right type."""
+    assert isinstance(_parse_ingest_frame(_aggregate_frame_json()), AggregateFrame)
+    assert isinstance(_parse_ingest_frame(_presence_frame_json()), PresenceFrame)
