@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useRecall, reduceSessionFrame, snapshotSessions } from './useRecall'
+import { useRecall, reduceSessionFrame, snapshotSessions, mergeSnapshot } from './useRecall'
 import type { SessionState } from './types'
 
 // Minimal fake WebSocket that lets us drive lifecycle events manually and
@@ -193,6 +193,47 @@ describe('snapshotSessions', () => {
 
   it('tolerates a missing/undefined sessions object', () => {
     expect(snapshotSessions(undefined)).toEqual({})
+  })
+})
+
+describe('mergeSnapshot', () => {
+  const mkSession = (id: string, state: string, eventCount = 1): SessionState => ({
+    id,
+    state,
+    previousState: 'off',
+    lastChange: new Date(),
+    eventCount,
+    history: [{ state, timestamp: new Date() }],
+  })
+
+  it('keeps a live WS session the snapshot predates', () => {
+    // A session started during the in-flight /sessions fetch: onmessage
+    // inserted it, then the older snapshot (which lacks it) resolves. A full
+    // replace would drop it; merge must keep it.
+    const live = { x: mkSession('x', 'idle') }
+    const snap = snapshotSessions({}) // daemon had no sessions at request time
+    const merged = mergeSnapshot(live, snap)
+    expect(merged.x).toBeDefined()
+    expect(merged.x.state).toBe('idle')
+  })
+
+  it('lets the live value win for a session present in both', () => {
+    // Snapshot says 'working' (stale), WS already advanced it to 'awaiting_input'
+    // with accumulated eventCount — the live entry must survive intact.
+    const live = { x: mkSession('x', 'awaiting_input', 5) }
+    const snap = snapshotSessions({ x: { state: 'working' } })
+    const merged = mergeSnapshot(live, snap)
+    expect(merged.x.state).toBe('awaiting_input')
+    expect(merged.x.eventCount).toBe(5)
+  })
+
+  it('seeds snapshot-only sessions the WS stream has not mentioned', () => {
+    const live = { x: mkSession('x', 'idle') }
+    const snap = snapshotSessions({ y: { state: 'working' } })
+    const merged = mergeSnapshot(live, snap)
+    expect(merged.x).toBeDefined()
+    expect(merged.y).toBeDefined()
+    expect(merged.y.state).toBe('working')
   })
 })
 
