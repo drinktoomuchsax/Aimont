@@ -32,3 +32,12 @@ def test_valid_boundary_ports_pass_validation(command):
     # connect, exiting 1 — proof validation let it through rather than exit 2).
     result = runner.invoke(app, [command, "--port", "65535"])
     assert result.exit_code == 1  # daemon-unreachable, not a validation error
+
+
+@pytest.mark.parametrize("bad_poll", ["0", "-1", "-0.5"])
+def test_codex_probe_rejects_nonpositive_poll(bad_poll):
+    # A non-positive --poll would make time.sleep raise or busy-spin. The
+    # callback fires during arg parsing → clean exit 2, no probe started.
+    result = runner.invoke(app, ["codex-probe", "--poll", bad_poll])
+    assert result.exit_code == 2
+    assert "greater than 0" in result.output

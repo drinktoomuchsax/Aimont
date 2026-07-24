@@ -48,6 +48,17 @@ def _validate_port(value: int) -> int:
     return value
 
 
+def _validate_poll(value: float) -> float:
+    """Reject a non-positive poll interval before it reaches time.sleep.
+
+    A negative value makes time.sleep raise, and 0 turns the probe loop into a
+    busy-spin. Fail with a clean exit-2, matching how --port is validated.
+    """
+    if value <= 0:
+        raise typer.BadParameter(f"poll must be greater than 0 (got {value})")
+    return value
+
+
 def _version_callback(value: bool) -> None:
     if value:
         from aimont import __version__
@@ -278,7 +289,7 @@ def sessions(
 @app.command(name="codex-probe")
 def codex_probe(
     port: int = typer.Option(8765, help="Daemon port", callback=_validate_port),
-    poll: float = typer.Option(2.0, help="Poll interval (seconds)"),
+    poll: float = typer.Option(2.0, help="Poll interval (seconds)", callback=_validate_poll),
     busy_cpu: float = typer.Option(10.0, help="CPU%% threshold that counts as 'working'"),
     idle_after: float = typer.Option(6.0, help="Seconds of quiet CPU before emitting Stop"),
 ):

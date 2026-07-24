@@ -283,3 +283,37 @@ def test_post_payload_tags_agent_kind_codex():
         "session_id": "sid-1",
         "agent_kind": "codex",
     }
+
+
+@pytest.mark.parametrize("bad_poll", [0.0, -1.0, -0.5])
+def test_poll_sec_clamped_to_positive_floor(bad_poll):
+    """A non-positive poll_sec (from a caller other than the CLI) must be
+    clamped so run_forever's time.sleep can't raise or busy-spin — the probe's
+    'never crash' contract holds regardless of the caller."""
+    probe = CodexProbe(poll_sec=bad_poll)
+    assert probe.poll_sec >= codex_probe.MIN_POLL_SEC
+
+
+def test_run_forever_survives_a_crashing_tick_and_sleeps():
+    """tick() raising must not escape run_forever, and the loop must sleep the
+    (clamped) poll interval between ticks rather than crashing on a bad value."""
+    probe = CodexProbe(poll_sec=-1.0)  # would be a fatal time.sleep(-1) unclamped
+
+    calls = {"tick": 0, "sleeps": []}
+
+    def boom():
+        calls["tick"] += 1
+        raise RuntimeError("tick blew up")
+
+    def fake_sleep(secs):
+        calls["sleeps"].append(secs)
+        if len(calls["sleeps"]) >= 3:
+            raise KeyboardInterrupt  # break out of the infinite loop
+
+    probe.tick = boom  # type: ignore[method-assign]
+    with patch.object(codex_probe.time, "sleep", fake_sleep):
+        with pytest.raises(KeyboardInterrupt):
+            probe.run_forever()
+
+    assert calls["tick"] >= 3  # crashing tick was swallowed each iteration
+    assert all(s >= codex_probe.MIN_POLL_SEC for s in calls["sleeps"])
