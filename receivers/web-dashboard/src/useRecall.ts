@@ -111,18 +111,36 @@ export function snapshotSessions(
 // yet), so the frame is lost — then the snapshot re-adds the dead session as a
 // permanent ghost panel until the ~300s cleanup. `tombstoned` carries the ids
 // that went off during the fetch window; those are dropped from the snapshot
-// fill so a lost off-frame can't resurrect them. Pure/exported for testing.
+// fill so a lost off-frame can't resurrect them.
+//
+// The reconnect hazard: while the socket is down, a session can end. The daemon
+// does NOT replay state to a freshly attached subscriber (websocket connect),
+// so that `off` frame is simply never delivered. On reconnect the fresh
+// snapshot no longer lists the dead session, but a purely additive merge
+// (`{ ...filled, ...curr }`) keeps the stale `curr` entry forever — a frozen
+// ghost panel that also inflates the topbar count until a manual reload.
+// `seenLive` carries the ids that produced a live WS frame since this
+// connection opened; a `curr` entry that is BOTH absent from the fresh snapshot
+// AND not in `seenLive` is exactly such a stale ghost and is pruned. The
+// snapshot is request-time, so a session that started mid-fetch may be missing
+// from it — `seenLive` protects those live entries from the prune (the same
+// race the spread order guards for overlapping keys). Pure/exported for testing.
 export function mergeSnapshot(
   curr: Record<string, SessionState>,
   snapshot: Record<string, SessionState>,
   tombstoned: ReadonlySet<string> = new Set(),
+  seenLive: ReadonlySet<string> = new Set(),
 ): Record<string, SessionState> {
   const filled: Record<string, SessionState> = {}
   for (const [id, session] of Object.entries(snapshot)) {
     if (tombstoned.has(id)) continue
     filled[id] = session
   }
-  return { ...filled, ...curr }
+  const merged: Record<string, SessionState> = { ...filled, ...curr }
+  for (const id of Object.keys(merged)) {
+    if (!(id in snapshot) && !seenLive.has(id)) delete merged[id]
+  }
+  return merged
 }
 
 // Map a raw presence frame to a HostPresence entry. Exported for testing.
@@ -194,6 +212,13 @@ export function useRecall() {
   // re-add the now-dead session as a ghost panel. Consumed by mergeSnapshot to
   // drop these from the snapshot fill. Reset in onopen (a fresh fetch starts).
   const endedDuringFetchRef = useRef<Set<string>>(new Set())
+  // Session ids that have produced a live `session` frame since this connection
+  // opened. Consumed by mergeSnapshot to protect live entries from the ghost
+  // prune: a session absent from the fresh snapshot but present here is one that
+  // started mid-fetch (keep it), whereas one absent from both the snapshot and
+  // this set is a stale panel left over from before a reconnect (drop it).
+  // Reset in onopen so each (re)connection reasons only about its own frames.
+  const seenLiveRef = useRef<Set<string>>(new Set())
 
   const connect = useCallback(() => {
     const ws = new WebSocket(WS_URL)
@@ -207,12 +232,17 @@ export function useRecall() {
       aggregateFromWsRef.current = false
       // A fresh fetch is starting; forget tombstones from the prior connection.
       endedDuringFetchRef.current = new Set()
+      // ...and forget which sessions were seen live under the prior connection,
+      // so the ghost prune reasons only about this connection's frames.
+      seenLiveRef.current = new Set()
       // Fetch initial state
       fetch(`${API_BASE}/sessions`)
         .then(r => r.json())
         .then(data => {
           const snap = snapshotSessions(data.sessions)
-          setSessions(curr => mergeSnapshot(curr, snap, endedDuringFetchRef.current))
+          setSessions(curr =>
+            mergeSnapshot(curr, snap, endedDuringFetchRef.current, seenLiveRef.current),
+          )
         })
         .catch(() => {})
 
@@ -261,6 +291,11 @@ export function useRecall() {
         // (Harmless once the fetch has resolved — the set is reset each onopen.)
         if (resolveState(frame.state) === 'off') {
           endedDuringFetchRef.current.add(frame.session_id)
+        } else {
+          // A live, non-off frame: this session is real for this connection, so
+          // the reconnect ghost prune must not drop it even if a request-time
+          // snapshot (still in flight) predates its start.
+          seenLiveRef.current.add(frame.session_id)
         }
         setSessions(curr => reduceSessionFrame(curr, frame))
       }

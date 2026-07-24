@@ -212,7 +212,9 @@ describe('mergeSnapshot', () => {
     // replace would drop it; merge must keep it.
     const live = { x: mkSession('x', 'idle') }
     const snap = snapshotSessions({}) // daemon had no sessions at request time
-    const merged = mergeSnapshot(live, snap)
+    // x was seen live this connection (onmessage inserted it), so the prune
+    // spares it even though the request-time snapshot predates its start.
+    const merged = mergeSnapshot(live, snap, new Set(), new Set(['x']))
     expect(merged.x).toBeDefined()
     expect(merged.x.state).toBe('idle')
   })
@@ -230,7 +232,7 @@ describe('mergeSnapshot', () => {
   it('seeds snapshot-only sessions the WS stream has not mentioned', () => {
     const live = { x: mkSession('x', 'idle') }
     const snap = snapshotSessions({ y: { state: 'working' } })
-    const merged = mergeSnapshot(live, snap)
+    const merged = mergeSnapshot(live, snap, new Set(), new Set(['x']))
     expect(merged.x).toBeDefined()
     expect(merged.y).toBeDefined()
     expect(merged.y.state).toBe('working')
@@ -256,6 +258,29 @@ describe('mergeSnapshot', () => {
     const merged = mergeSnapshot(live, snap, new Set(['y']))
     expect(merged.y).toBeDefined()
     expect(merged.y.state).toBe('working')
+  })
+
+  it('prunes a stale curr session absent from the fresh snapshot (reconnect ghost)', () => {
+    // Reconnect: the socket was down while session g ended, so its off-frame was
+    // never delivered (the daemon does not replay to a new subscriber). g lingers
+    // in curr; the fresh snapshot no longer lists it and it never produced a live
+    // frame this connection — it is a ghost and must be pruned.
+    const live = { a: mkSession('a', 'working'), g: mkSession('g', 'idle') }
+    const snap = snapshotSessions({ a: { state: 'working' } })
+    const merged = mergeSnapshot(live, snap, new Set(), new Set())
+    expect(merged.a).toBeDefined()
+    expect(merged.g).toBeUndefined()
+  })
+
+  it('does NOT prune a curr session that was seen live this connection', () => {
+    // A session that started mid-fetch: onmessage inserted it and recorded it in
+    // seenLive, but the request-time snapshot predates it. Absent from the
+    // snapshot yet genuinely live — the prune must spare it.
+    const live = { fresh: mkSession('fresh', 'idle') }
+    const snap = snapshotSessions({}) // request-time daemon had no sessions
+    const merged = mergeSnapshot(live, snap, new Set(), new Set(['fresh']))
+    expect(merged.fresh).toBeDefined()
+    expect(merged.fresh.state).toBe('idle')
   })
 })
 
@@ -436,5 +461,52 @@ describe('useRecall session frame handling', () => {
     })
 
     expect(result.current.sessions['g']).toBeUndefined()
+  })
+
+  it('prunes a ghost session that ended silently while the socket was down', async () => {
+    // First connection: snapshot lists a (live) and b (live). Then the socket
+    // drops. While disconnected, b ends — but the daemon does not replay state
+    // to a new subscriber, so b's off-frame is NEVER delivered. On reconnect the
+    // fresh snapshot lists only a. A purely additive merge would keep b forever
+    // as a frozen ghost panel; the prune must drop it.
+    let sessionsBody: Record<string, { state: string }> = {
+      a: { state: 'working' },
+      b: { state: 'idle' },
+    }
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/sessions')) {
+        return Promise.resolve({ json: () => Promise.resolve({ sessions: sessionsBody }) })
+      }
+      return Promise.resolve({
+        json: () => Promise.resolve({ state: 'off', active_sessions: 0, breakdown: {} }),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { result } = renderHook(() => useRecall())
+    const ws1 = FakeWebSocket.instances[0]
+
+    await act(async () => {
+      ws1.onopen?.()
+    })
+    expect(result.current.sessions['a']).toBeDefined()
+    expect(result.current.sessions['b']).toBeDefined()
+
+    // Socket drops; the hook reconnects (real timers, 1s backoff).
+    await act(async () => {
+      ws1.onclose?.()
+      await new Promise(res => setTimeout(res, 1100))
+    })
+    const ws2 = FakeWebSocket.instances[1]
+    expect(ws2).toBeDefined()
+
+    // b ended during downtime — the reconnect snapshot no longer lists it.
+    sessionsBody = { a: { state: 'working' } }
+    await act(async () => {
+      ws2.onopen?.()
+    })
+
+    expect(result.current.sessions['a']).toBeDefined()
+    expect(result.current.sessions['b']).toBeUndefined() // ghost pruned
   })
 })
