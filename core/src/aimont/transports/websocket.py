@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,6 +12,14 @@ from fastapi import WebSocket
 from aimont.models import AggregateFrame, PresenceFrame, StateFrame
 from aimont.transports import register_transport
 from aimont.transports.base import BaseTransport
+
+logger = logging.getLogger(__name__)
+
+# Per-subscriber send deadline. A client that stops draining its socket applies
+# TCP backpressure; without a bound, `send_text` blocks forever. We send outside
+# the lock so one slow client can't wedge the pipeline, and cap each send so a
+# stalled client is pruned rather than accumulating latency on every broadcast.
+_SEND_TIMEOUT_SEC = 5.0
 
 
 @dataclass
@@ -26,6 +35,7 @@ class WebSocketTransport(BaseTransport):
         super().__init__(name, options)
         self._subscribers: list[Subscriber] = []
         self._lock = asyncio.Lock()
+        self._send_timeout: float = float(options.get("send_timeout_sec", _SEND_TIMEOUT_SEC))
 
     async def start(self) -> None:
         pass
@@ -48,32 +58,58 @@ class WebSocketTransport(BaseTransport):
         tied to a specific session_id.
         """
         payload = frame.model_dump_json()
-        async with self._lock:
-            dead: list[Subscriber] = []
-            for sub in self._subscribers:
-                if not self._wants_session_frame(sub, frame):
-                    continue
-                try:
-                    await sub.ws.send_text(payload)
-                except Exception:
-                    dead.append(sub)
-            for sub in dead:
-                self._subscribers.remove(sub)
+        await self._broadcast(payload, lambda sub: self._wants_session_frame(sub, frame))
 
     async def send_aggregate(self, frame: AggregateFrame) -> None:
         """Send aggregated frame to relevant subscribers."""
         payload = frame.model_dump_json()
+        await self._broadcast(payload, self._wants_aggregate_frame)
+
+    async def _broadcast(self, payload: str, wants) -> None:
+        """Deliver `payload` to every subscriber matched by `wants`.
+
+        Sends happen OUTSIDE the lock: `send_text` can block indefinitely under
+        client backpressure, and holding the lock across it would wedge the
+        whole pipeline — every other broadcast, new connect() (which blocks
+        mid-handshake), and disconnect() would queue behind the stalled client.
+        We snapshot the matching subscribers under the lock, send concurrently
+        with a per-send timeout, then prune any that failed or timed out under
+        the lock. Membership can change while we're unlocked, so pruning filters
+        by identity and tolerates already-removed subscribers.
+        """
         async with self._lock:
-            dead: list[Subscriber] = []
-            for sub in self._subscribers:
-                if not self._wants_aggregate_frame(sub):
-                    continue
-                try:
-                    await sub.ws.send_text(payload)
-                except Exception:
-                    dead.append(sub)
-            for sub in dead:
-                self._subscribers.remove(sub)
+            targets = [sub for sub in self._subscribers if wants(sub)]
+        if not targets:
+            return
+
+        results = await asyncio.gather(
+            *(self._send_one(sub, payload) for sub in targets),
+            return_exceptions=True,
+        )
+        dead = {
+            id(sub)
+            for sub, ok in zip(targets, results)
+            if isinstance(ok, BaseException) or ok is False
+        }
+        if not dead:
+            return
+        async with self._lock:
+            self._subscribers = [s for s in self._subscribers if id(s) not in dead]
+
+    async def _send_one(self, sub: Subscriber, payload: str) -> bool:
+        """Send to one subscriber; return False if it should be pruned."""
+        try:
+            await asyncio.wait_for(sub.ws.send_text(payload), timeout=self._send_timeout)
+            return True
+        except TimeoutError:
+            logger.warning(
+                "websocket %s: subscriber send timed out after %.1fs; pruning",
+                self.name,
+                self._send_timeout,
+            )
+            return False
+        except Exception:
+            return False
 
     async def connect(
         self, ws: WebSocket, mode: str = "aggregate", session_filter: str | None = None
