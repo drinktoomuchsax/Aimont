@@ -36,6 +36,14 @@ _MAX_BACKOFF_SEC = 60.0
 # token, disabled /ingest, policy close) otherwise pin the backoff at the
 # minimum and get hammered once per second forever.
 _STABLE_CONNECTION_SEC = 10.0
+# Bound each upstream send. websockets' ws.send() awaits the write-buffer drain
+# once it exceeds the high-water mark, so a connected-but-backpressuring upstream
+# (paused peer, saturated link, overloaded aggregator) would otherwise block the
+# daemon's broadcast hot path — handle_event awaits each transport's send in turn
+# inside POST /events — until ping_timeout (~20s) finally reaps the connection.
+# Frames are best-effort, so on timeout we drop the frame and let the reconnect
+# machinery recover, mirroring WebSocketTransport's per-send bound.
+_SEND_TIMEOUT_SEC = 10.0
 
 
 @register_transport("push")
@@ -64,6 +72,7 @@ class PushTransport(BaseTransport):
         else:
             self._host_identity = HostIdentity(**host)
 
+        self._send_timeout: float = float(options.get("send_timeout_sec", _SEND_TIMEOUT_SEC))
         self._ws = None
         self._connect_task: asyncio.Task | None = None
         self._stopped = asyncio.Event()
@@ -112,9 +121,13 @@ class PushTransport(BaseTransport):
         if ws is None or ws.state != State.OPEN:
             return  # Drop silently when disconnected; reconnect loop will recover.
         try:
-            await ws.send(payload)
+            # wait_for cancels the stuck write on timeout so a backpressuring
+            # upstream can't wedge the broadcast path; the ping/reconnect loop
+            # then reaps the connection. TimeoutError is an Exception subclass,
+            # so the single handler covers both the timeout and send failures.
+            await asyncio.wait_for(ws.send(payload), timeout=self._send_timeout)
         except Exception as e:
-            logger.debug("PushTransport send failed, will reconnect: %s", e)
+            logger.debug("PushTransport send failed/timed out, will reconnect: %s", e)
 
     async def _connect_loop(self) -> None:
         backoff = _MIN_BACKOFF_SEC
