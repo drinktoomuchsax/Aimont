@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from aimont.config import load_config
+from aimont.config import ConfigError, load_config
 
 
 @pytest.fixture(autouse=True)
@@ -100,3 +100,30 @@ def test_null_transports_section_with_push_env(monkeypatch, tmp_path):
     push = cfg.transports["push"]
     assert push.enabled is True
     assert push.options["upstream_url"] == "https://example.com/ingest"
+
+
+@pytest.mark.parametrize("bad", ["ingest: 5\n", "ingest: foo\n", "ingest:\n  - a\n"])
+def test_wrongtype_ingest_section_with_env_override(monkeypatch, tmp_path, bad):
+    """A wrong-typed `ingest:` section (int/str/list) is a genuine
+    misconfiguration. With the env override active it must surface as a
+    ConfigError — the same failure the no-override path produces at
+    model_validate — not an uncaught TypeError/AttributeError from assigning
+    into a non-dict. `or {}` only rescued the falsy None case, letting these
+    truthy wrong types crash."""
+    cfg_yaml = tmp_path / ".aimont.yaml"
+    cfg_yaml.write_text(bad)
+    monkeypatch.setenv("AIMONT_INGEST_ENABLED", "true")
+    with pytest.raises(ConfigError):
+        load_config()
+
+
+@pytest.mark.parametrize("bad", ["transports: 5\n", "transports: foo\n"])
+def test_wrongtype_transports_section_with_push_env(monkeypatch, tmp_path, bad):
+    """A wrong-typed `transports:` section must surface as a ConfigError under
+    the push env override, not an uncaught AttributeError from `.get()` on a
+    non-dict."""
+    cfg_yaml = tmp_path / ".aimont.yaml"
+    cfg_yaml.write_text(bad)
+    monkeypatch.setenv("AIMONT_UPSTREAM_URL", "https://example.com/ingest")
+    with pytest.raises(ConfigError):
+        load_config()
