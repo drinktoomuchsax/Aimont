@@ -174,7 +174,7 @@ Tokens are not cryptographically signed in the current release. If you suspect a
 ```bash
 # Remove the old secret from the upstream's allowlist.
 export AIMONT_INGEST_TOKENS="new-secret-1,new-secret-2"   # without the old one
-# Restart the upstream. Old tokens now get 401 on /ingest.
+# Restart the upstream. Old tokens now get rejected on /ingest (HTTP 403).
 ```
 
 The leftover downstream daemons will retry indefinitely with the dead token; they're not hazardous (upstream rejects them before accepting any frame).
@@ -323,8 +323,8 @@ Walk down the chain:
 
 1. **Is push enabled?** Check `~/.config/aimont/token` exists, or the env vars are set in the daemon's environment (not just your shell — systemd services have their own env).
 2. **Is the upstream reachable?** `curl -I https://recall.yourteam.com/` should return 200 (or 403 if Access is enabled; that's fine too).
-3. **Is the token valid?** On the upstream, check journal for `401` entries around the time the daemon started.
-4. **Is `/ingest` actually enabled?** Upstream returns `403` on `/ingest` if `AIMONT_INGEST_ENABLED` is unset. Curl it with a bogus Bearer to see:
+3. **Is the token valid?** A rejected token closes the WebSocket *before* the handshake completes, so the client sees an HTTP `403` (the daemon uses WebSocket close code `4401` internally, but uvicorn collapses any pre-accept close into HTTP `403` — you won't find a `401` in the client response or the journal). A bad token and a disabled endpoint therefore look identical from the outside; the way to tell them apart is step 4.
+4. **Is `/ingest` actually enabled?** Upstream also returns `403` on `/ingest` if `AIMONT_INGEST_ENABLED` is unset (internally WebSocket close code `4403`). To distinguish "disabled" from "bad token", check `AIMONT_INGEST_ENABLED` on the upstream: if it's set and you still get `403`, the token is the problem. Curl `/ingest` with a bogus Bearer to reproduce the rejection:
    ```bash
    curl -i -H "Upgrade: websocket" -H "Connection: Upgrade" -H "Authorization: Bearer test" \
      -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" -H "Sec-WebSocket-Version: 13" \
