@@ -201,6 +201,12 @@ def status(
         r = httpx.get(f"http://127.0.0.1:{port}/state", timeout=2.0)
         r.raise_for_status()
         data = r.json()
+        if not isinstance(data, dict):
+            # A foreign service on this port can answer with valid JSON of the
+            # wrong shape (a list/scalar); data.get(...) would then raise an
+            # uncaught AttributeError. Treat it as the "wrong port?" case the
+            # non-JSON branch already handles.
+            raise ValueError("response body is not a JSON object")
         typer.echo(f"State: {data.get('state', '?')}")
         typer.echo(f"Sessions: {data.get('active_sessions', '?')}")
         if data.get("breakdown"):
@@ -298,10 +304,19 @@ def sessions(
         r = httpx.get(f"http://127.0.0.1:{port}/sessions", timeout=2.0)
         r.raise_for_status()
         data = r.json()
-        if not data.get("sessions"):
+        if not isinstance(data, dict):
+            # Foreign JSON server on this port: data.get(...) would raise an
+            # uncaught AttributeError. Route it through the "wrong port?" path.
+            raise ValueError("response body is not a JSON object")
+        sessions_map = data.get("sessions")
+        if not sessions_map:
             typer.echo("No active sessions.")
+        elif not isinstance(sessions_map, dict):
+            # A well-formed daemon returns a mapping; a wrong-shape body (e.g.
+            # {"sessions": [...]}) would crash .items(). Treat as wrong port.
+            raise ValueError("'sessions' is not a JSON object")
         else:
-            for sid, info in data["sessions"].items():
+            for sid, info in sessions_map.items():
                 if isinstance(info, dict):
                     state = info.get("state", "?")
                     kind = info.get("agent_kind", "claude")
