@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from aimont.models import (
     FRAME_SCHEMA_VERSION,
@@ -143,3 +143,36 @@ def test_accepts_valid_aggregate_and_presence_frames():
     """Sanity: the non-negative variants still parse to the right type."""
     assert isinstance(_parse_ingest_frame(_aggregate_frame_json()), AggregateFrame)
     assert isinstance(_parse_ingest_frame(_presence_frame_json()), PresenceFrame)
+
+
+# --- naive-timestamp coercion --------------------------------------------
+# A peer may send an offset-less ISO timestamp; pydantic parses it into a naive
+# datetime. The daemon relays frames and later code may do aware/naive
+# arithmetic (now(utc) - frame.timestamp), which raises TypeError on a mismatch.
+# Frames must always carry a tz-aware timestamp after parsing.
+
+
+def test_naive_state_frame_timestamp_coerced_to_utc():
+    frame = _parse_ingest_frame(_state_frame_json(timestamp="2026-01-01T10:00:00"))
+    assert isinstance(frame, StateFrame)
+    assert frame.timestamp.tzinfo is not None
+    # Naive input is assumed UTC — the wall-clock value is preserved.
+    assert frame.timestamp == datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+    # Arithmetic against an aware "now" no longer raises.
+    _ = datetime.now(timezone.utc) - frame.timestamp
+
+
+def test_aware_state_frame_timestamp_preserved():
+    frame = _parse_ingest_frame(_state_frame_json(timestamp="2026-01-01T10:00:00+05:00"))
+    assert isinstance(frame, StateFrame)
+    assert frame.timestamp.utcoffset() == timedelta(hours=5)
+
+
+def test_naive_aggregate_and_presence_timestamps_coerced_to_utc():
+    agg = _parse_ingest_frame(_aggregate_frame_json(timestamp="2026-01-01T10:00:00"))
+    assert isinstance(agg, AggregateFrame)
+    assert agg.timestamp.tzinfo is not None
+
+    pres = _parse_ingest_frame(_presence_frame_json(timestamp="2026-01-01T10:00:00"))
+    assert isinstance(pres, PresenceFrame)
+    assert pres.timestamp.tzinfo is not None
