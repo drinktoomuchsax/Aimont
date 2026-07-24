@@ -208,7 +208,23 @@ class App:
             metadata=metadata,
         )
 
+    def _stamp_origin(self, frame: StateFrame | AggregateFrame | PresenceFrame) -> None:
+        """Record our host_id in the frame's forwarded_by chain (idempotent).
+
+        Every frame we put on the wire — whether we originated it or are
+        relaying it from /ingest — must carry our host_id so that in a cyclic
+        push topology (A→B→A) the frame looping back is caught by the
+        split-horizon guard in ingest_relay_frame. Without this, a
+        self-originated frame leaves with forwarded_by=[], comes back stamped
+        only with the peer's id, and we fail to recognize it as our own — so
+        we re-broadcast a spurious duplicate of our own frame to local viewers.
+        """
+        host_id = self.host_identity.host_id
+        if host_id not in frame.forwarded_by:
+            frame.forwarded_by.append(host_id)
+
     async def _broadcast_session_frame(self, frame: StateFrame) -> None:
+        self._stamp_origin(frame)
         for transport in self.transports:
             try:
                 await transport.send(frame)
@@ -218,6 +234,7 @@ class App:
                 logger.debug("transport %s failed to send session frame: %s", transport.name, e)
 
     async def _broadcast_aggregate_frame(self, frame: AggregateFrame) -> None:
+        self._stamp_origin(frame)
         for transport in self.transports:
             try:
                 await transport.send_aggregate(frame)
@@ -232,6 +249,7 @@ class App:
         (viewers in mode=all will receive it) and through any push transport
         using the same send() method.
         """
+        self._stamp_origin(frame)
         for transport in self.transports:
             try:
                 # Reuse the per-session send path: subscribers in mode=all or
@@ -256,10 +274,9 @@ class App:
         if not await self._ingest_cache.add(frame.message_id):
             return False
 
-        # Stamp: append ourselves to the forwarded_by chain so downstream
-        # hops (and any loop-back) can recognize us.
-        frame.forwarded_by.append(self.host_identity.host_id)
-
+        # The forwarded_by stamp happens in the _broadcast_* helpers below, so
+        # downstream hops (and any loop-back) can recognize us — see
+        # _stamp_origin, which covers both relayed and self-originated frames.
         if isinstance(frame, StateFrame):
             await self._broadcast_session_frame(frame)
         elif isinstance(frame, AggregateFrame):
