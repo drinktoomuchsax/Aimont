@@ -66,19 +66,28 @@ class App:
         )
 
     async def start(self) -> None:
-        for name, tc in self.config.transports.items():
-            if not tc.enabled:
-                continue
-            cls = get_transport_class(tc.type)
-            options = dict(tc.options)
-            # Transports that need this daemon's identity (e.g. push) get it
-            # injected here so they don't have to re-resolve the config.
-            options.setdefault("host_identity", self.host_identity)
-            transport = cls(name=name, options=options)
-            await transport.start()
-            self.transports.append(transport)
-            if isinstance(transport, WebSocketTransport):
-                self._ws_transport = transport
+        try:
+            for name, tc in self.config.transports.items():
+                if not tc.enabled:
+                    continue
+                cls = get_transport_class(tc.type)
+                options = dict(tc.options)
+                # Transports that need this daemon's identity (e.g. push) get it
+                # injected here so they don't have to re-resolve the config.
+                options.setdefault("host_identity", self.host_identity)
+                transport = cls(name=name, options=options)
+                await transport.start()
+                self.transports.append(transport)
+                if isinstance(transport, WebSocketTransport):
+                    self._ws_transport = transport
+        except Exception:
+            # A later transport's start() failing must not orphan the ones
+            # already started. lifespan awaits stop() only after yield, which a
+            # startup failure never reaches — so PushTransport's spawned
+            # reconnect task (and any other started transport) would leak. Tear
+            # down what we started, then re-raise so startup still fails loudly.
+            await self._stop_transports()
+            raise
 
         self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
 
@@ -115,8 +124,19 @@ class App:
             except (asyncio.CancelledError, Exception):
                 pass
             self._cleanup_task = None
+        await self._stop_transports()
+
+    async def _stop_transports(self) -> None:
+        # Stop every started transport, tolerating a failure in one so it can't
+        # skip tearing down the rest. Clears the list + _ws_transport so a
+        # partial-startup teardown leaves the App in a clean, empty state.
         for t in self.transports:
-            await t.stop()
+            try:
+                await t.stop()
+            except Exception as e:
+                logger.debug("transport %s failed to stop cleanly: %s", t.name, e)
+        self.transports = []
+        self._ws_transport = None
 
     async def handle_event(self, payload: EventPayload) -> dict:
         result = self.rules.resolve(payload.event, payload.session_id)
