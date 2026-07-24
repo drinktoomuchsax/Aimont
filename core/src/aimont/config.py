@@ -206,11 +206,21 @@ def load_config(path: Path | None = None) -> AimontConfig:
     merged: dict[str, Any] = {}
     for p in candidates:
         if p and p.exists():
-            with open(p) as f:
-                try:
+            # open() lives inside the try too: a path that exists but is a
+            # directory raises IsADirectoryError, and an unreadable file raises
+            # PermissionError — both OSError, not FileNotFoundError. Without this
+            # they escape as a raw traceback (e.g. `--config ~/.config/aimont/`
+            # pointing at the dir instead of config.yaml, a common slip), past
+            # the daemon command's `except (FileNotFoundError, ConfigError)`,
+            # defeating the clean exit-2 the pre-validate exists to produce.
+            try:
+                with open(p) as f:
                     data = yaml.safe_load(f)
-                except yaml.YAMLError as e:
-                    raise ConfigError(f"invalid YAML in config file {p}: {e}") from e
+            except OSError as e:
+                raise ConfigError(f"could not read config file {p}: {e}") from e
+            except yaml.YAMLError as e:
+                raise ConfigError(f"invalid YAML in config file {p}: {e}") from e
+            else:
                 if data is not None and not isinstance(data, dict):
                     raise ConfigError(
                         f"config file {p} must contain a mapping, got {type(data).__name__}"
