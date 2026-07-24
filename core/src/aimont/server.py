@@ -456,6 +456,29 @@ def _authorize_ingest(ws: WebSocket, allowed_tokens: list[str]) -> bool:
     return matched
 
 
+async def _receive_ingest_text(ws: WebSocket) -> str | None:
+    """Receive one text frame from an ingest peer, tolerating binary frames.
+
+    Starlette's ws.receive_text() does message["text"], which raises KeyError
+    (not WebSocketDisconnect) when the peer sends a *binary* frame — the ASGI
+    event is {"type": "websocket.receive", "bytes": ...} with no "text" key.
+    That KeyError would escape _handle_ingest unhandled (its try only catches
+    WebSocketDisconnect), bypassing all the hello hardening that turns bad peer
+    input into a clean close. Receive the raw message ourselves and return the
+    text, None for a binary frame (caller decides: close in the handshake,
+    skip in the main loop), and re-raise disconnects as WebSocketDisconnect so
+    the existing handling is preserved.
+    """
+    message = await ws.receive()
+    if message["type"] == "websocket.disconnect":
+        raise WebSocketDisconnect(message.get("code", 1000))
+    text = message.get("text")
+    if text is None:
+        # A binary frame (or any non-text payload) — not part of the protocol.
+        return None
+    return text
+
+
 def _parse_ingest_frame(raw: str) -> StateFrame | AggregateFrame | PresenceFrame | None:
     """Try to parse a JSON payload as one of the known frame types.
 
@@ -532,9 +555,15 @@ async def _handle_ingest(fastapi_app: FastAPI, ws: WebSocket) -> None:
             # accept()ed but never sends hello would otherwise park this
             # coroutine (and its socket/task) forever, since keepalive pings
             # are driven by the client. Close with 4408 (timeout) on expiry.
-            hello_raw = await asyncio.wait_for(ws.receive_text(), timeout=cfg.hello_timeout_sec)
+            hello_raw = await asyncio.wait_for(
+                _receive_ingest_text(ws), timeout=cfg.hello_timeout_sec
+            )
         except (asyncio.TimeoutError, TimeoutError):
             await ws.close(code=4408)  # request timeout
+            return
+        if hello_raw is None:
+            # Binary frame where a JSON hello was expected — protocol violation.
+            await ws.close(code=4400)  # bad request
             return
         try:
             hello = json.loads(hello_raw)
@@ -575,8 +604,12 @@ async def _handle_ingest(fastapi_app: FastAPI, ws: WebSocket) -> None:
 
         # Main loop: receive frames until the peer disconnects.
         while True:
-            raw = await ws.receive_text()
+            raw = await _receive_ingest_text(ws)
             last_activity = time.monotonic()
+            if raw is None:
+                # Binary frame — not part of the protocol; skip but keep the
+                # connection open, matching the unparseable-frame behavior.
+                continue
             frame = _parse_ingest_frame(raw)
             if frame is None:
                 # Unknown or malformed — skip but keep the connection open.
