@@ -536,7 +536,9 @@ Response:
 
 ### GET /sessions
 
-List all active sessions with metadata.
+List all active sessions with metadata. Each entry includes `agent_kind`
+(the agent that owns the session — `"claude"` or `"codex"`, defaulting to
+`"claude"`).
 
 ```
 GET http://127.0.0.1:8765/sessions
@@ -549,6 +551,7 @@ Response:
   "sessions": {
     "abc123": {
       "state": "working",
+      "agent_kind": "claude",
       "metadata": {
         "project": "my-app",
         "model": "claude-sonnet-4-20250514",
@@ -557,6 +560,7 @@ Response:
     },
     "def456": {
       "state": "awaiting_permission",
+      "agent_kind": "codex",
       "metadata": {
         "project": "api-server",
         "tool_name": "Bash",
@@ -581,6 +585,7 @@ Response:
 {
   "session_id": "abc123",
   "state": "working",
+  "agent_kind": "claude",
   "metadata": {
     "cwd": "/home/user/my-app",
     "project": "my-app",
