@@ -101,6 +101,22 @@ def test_garbage_schema_version_defers_to_validation():
     assert _parse_ingest_frame(raw) is None
 
 
+def test_infinite_schema_version_does_not_crash():
+    """json.loads accepts the non-standard tokens Infinity/-Infinity/NaN by
+    default (and 1e400 parses to inf). int(inf) raises OverflowError, not
+    ValueError, so without catching it the version guard would escape this
+    function — and its caller (_handle_ingest) only catches WebSocketDisconnect,
+    so one such peer frame would tear down the /ingest relay with an unhandled
+    ASGI traceback. All must be swallowed and rejected, never raise."""
+    for value in (float("inf"), float("-inf"), float("nan")):
+        data = json.loads(_state_frame_json())
+        data["schema_version"] = value
+        # json.dumps re-emits inf/nan as the non-standard tokens a peer sends
+        # over the wire (Infinity/-Infinity/NaN), matching the real ingest path.
+        crafted = json.dumps(data)
+        assert _parse_ingest_frame(crafted) is None, value
+
+
 def test_rejects_non_dict_json():
     assert _parse_ingest_frame(json.dumps([1, 2, 3])) is None
     assert _parse_ingest_frame(json.dumps("a string")) is None

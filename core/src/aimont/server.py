@@ -547,7 +547,13 @@ def _parse_ingest_frame(raw: str) -> StateFrame | AggregateFrame | PresenceFrame
     raw_version = data.get("schema_version", FRAME_SCHEMA_VERSION)
     try:
         version = int(raw_version) if not isinstance(raw_version, bool) else FRAME_SCHEMA_VERSION
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError: json.loads accepts the non-standard tokens Infinity /
+        # -Infinity / NaN by default, and 1e400 parses to inf — int(inf) raises
+        # OverflowError (not ValueError), which would otherwise escape this
+        # handler (its caller only catches WebSocketDisconnect) as an unhandled
+        # ASGI traceback, letting one peer frame kill the relay. Treat it like
+        # any other uncoercible version: assume current and defer to validation.
         version = FRAME_SCHEMA_VERSION
     if version > FRAME_SCHEMA_VERSION:
         return None
