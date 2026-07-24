@@ -88,7 +88,13 @@ class HostConfig(BaseModel):
 
 
 class StateTTL(BaseModel):
-    ttl_sec: float
+    # ge=0: a negative TTL otherwise validates cleanly, then makes _charge_elapsed
+    # charge a NEGATIVE amount to the current state's cumulative duration, which
+    # StateDurations (fields ge=0) rejects with a ValidationError — surfacing as
+    # an unhandled 500 on every event for a session in that state. Fail fast at
+    # load instead, matching how server.port / hello_timeout_sec are bounded.
+    # 0 is allowed: it means "degrade immediately", which the accounting handles.
+    ttl_sec: float = Field(ge=0)
     degrade_to: str
 
     @field_validator("degrade_to")
