@@ -56,6 +56,21 @@ class RuleEngine:
             return RuleResult(state=state_from_name(rule.state), force=rule.force)
         return None
 
+    def forget(self, session_id: str | None) -> None:
+        """Drop all debounce state for a session that has ended.
+
+        _last_fired is keyed by (session_id, event) and only ever grows as new
+        sessions fire debounced events. The daemon is long-running and
+        multiplexes many short-lived, high-cardinality sessions, so without
+        eviction this map leaks one entry per (session, debounced-event) pair
+        forever. The registry cleans up every other per-session dict on session
+        end; this mirrors that for the debounce map, which lives in a sibling
+        object the registry can't reach.
+        """
+        stale = [key for key in self._last_fired if key[0] == session_id]
+        for key in stale:
+            del self._last_fired[key]
+
     def _is_debounced(self, rule: RuleConfig, session_id: str | None) -> bool:
         if rule.debounce_ms <= 0:
             return False

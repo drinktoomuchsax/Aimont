@@ -164,6 +164,29 @@ async def test_event_with_no_matching_rule_reports_no_rule():
 
 
 @pytest.mark.asyncio
+async def test_session_end_evicts_debounce_state():
+    """A SessionEnd event must drop the session's debounce entries so the
+    engine's _last_fired doesn't grow one entry per dead session forever."""
+    from aimont.config import AimontConfig, RuleConfig
+    from aimont.models import EventPayload, HookEvent
+    from aimont.server import App
+
+    app = App(
+        AimontConfig(
+            rules=[
+                RuleConfig(event="PreToolUse", state="tool_active", debounce_ms=2000),
+                RuleConfig(event="SessionEnd", state="off", force=True),
+            ]
+        )
+    )
+    await app.handle_event(EventPayload(event=HookEvent.PRE_TOOL_USE, session_id="s1"))
+    assert ("s1", "PreToolUse") in app.rules._last_fired
+
+    await app.handle_event(EventPayload(event=HookEvent.SESSION_END, session_id="s1"))
+    assert ("s1", "PreToolUse") not in app.rules._last_fired
+
+
+@pytest.mark.asyncio
 async def test_agent_kind_defaults_to_claude(client):
     await client.post("/events", json={"event": "UserPromptSubmit", "session_id": "sc1"})
     r = await client.get("/sessions/sc1")

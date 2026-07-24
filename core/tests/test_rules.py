@@ -91,6 +91,47 @@ def test_debounce_is_per_session():
     assert a_again is DEBOUNCED
 
 
+def test_forget_evicts_only_the_named_session():
+    """forget(session) must drop that session's debounce state (so it doesn't
+    leak across the daemon's lifetime) while leaving other sessions intact."""
+    rules = [RuleConfig(event="PreToolUse", state="tool_active", debounce_ms=2000)]
+    engine = RuleEngine(rules)
+
+    engine.resolve(HookEvent.PRE_TOOL_USE, "session-a")
+    engine.resolve(HookEvent.PRE_TOOL_USE, "session-b")
+    assert len(engine._last_fired) == 2
+
+    engine.forget("session-a")
+
+    # A's entry is gone — a re-created session with the same id fires cleanly.
+    assert ("session-a", "PreToolUse") not in engine._last_fired
+    assert engine.resolve(HookEvent.PRE_TOOL_USE, "session-a").state == AimontState.TOOL_ACTIVE
+    # B is untouched and still debounced within its window.
+    assert engine.resolve(HookEvent.PRE_TOOL_USE, "session-b") is DEBOUNCED
+
+
+def test_forget_unknown_session_is_a_noop():
+    rules = [RuleConfig(event="PreToolUse", state="tool_active", debounce_ms=2000)]
+    engine = RuleEngine(rules)
+    engine.resolve(HookEvent.PRE_TOOL_USE, "session-a")
+    engine.forget("never-seen")  # must not raise or disturb existing state
+    assert len(engine._last_fired) == 1
+
+
+def test_debounce_state_does_not_leak_across_sessions():
+    """Many short-lived sessions that each fire a debounced event then end must
+    not grow _last_fired without bound once forget() is called on end."""
+    rules = [RuleConfig(event="PreToolUse", state="tool_active", debounce_ms=2000)]
+    engine = RuleEngine(rules)
+
+    for i in range(100):
+        sid = f"session-{i}"
+        engine.resolve(HookEvent.PRE_TOOL_USE, sid)
+        engine.forget(sid)
+
+    assert engine._last_fired == {}
+
+
 @pytest.mark.asyncio
 async def test_debounce_expires():
     rules = [RuleConfig(event="PreToolUse", state="tool_active", debounce_ms=100)]

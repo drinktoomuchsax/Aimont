@@ -141,6 +141,12 @@ class App:
             agent_kind=agent_kind,
         )
 
+        # A session that has ended will never fire again — drop its debounce
+        # state so _last_fired doesn't accumulate one entry per dead session
+        # for the daemon's lifetime.
+        if payload.event == HookEvent.SESSION_END:
+            self.rules.forget(session_id)
+
         if session_frame:
             await self._broadcast_session_frame(session_frame)
         if aggregate_frame:
@@ -250,6 +256,9 @@ class App:
                 # Tell viewers the sessions went away, instead of leaving them
                 # showing stale sessions the daemon already dropped.
                 for frame in frames:
+                    # A timed-out session is gone for good — evict its debounce
+                    # state too (a SESSION_END event never arrived for it).
+                    self.rules.forget(frame.session_id)
                     await self._broadcast_session_frame(frame)
                 if aggregate is not None:
                     await self._broadcast_aggregate_frame(aggregate)
