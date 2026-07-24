@@ -329,6 +329,34 @@ async def test_split_horizon_drops_frames_that_visited_us():
                     await asyncio.wait_for(viewer.recv(), 0.3)
 
 
+async def test_self_originated_frame_loops_back_dropped():
+    """A frame we originate must carry our host_id so a cyclic push topology
+    (A→B→A) doesn't make us re-broadcast our own frame.
+
+    Without stamping on origination, an originated frame leaves with
+    forwarded_by=[]; when it loops back (stamped only with the peer's id) the
+    split-horizon guard fails to recognize it as ours and relays a spurious
+    duplicate to local viewers.
+    """
+    cfg = _default_config(ingest_enabled=True, host_id="host-A")
+    app_obj = App(cfg)
+    await app_obj.start()
+    try:
+        # Originate a frame the way handle_transition does.
+        frame = _make_state_frame(host_id="host-A")
+        await app_obj._broadcast_session_frame(frame)
+
+        # Origination stamped us into the chain.
+        assert "host-A" in frame.forwarded_by
+
+        # Simulate the frame arriving back via /ingest after a peer hop.
+        frame.forwarded_by.append("host-B")
+        relayed = await app_obj.ingest_relay_frame(frame)
+        assert relayed is False  # split-horizon caught our own frame
+    finally:
+        await app_obj.stop()
+
+
 async def test_message_id_dedup():
     cfg = _default_config(ingest_enabled=True)
     async with _running_daemon(cfg) as (_, base):
