@@ -28,6 +28,11 @@ from aimont.models import EVENT_PAYLOAD_VERSION
 
 DEFAULT_DAEMON_URL = "http://127.0.0.1:8765/events"
 DEFAULT_POLL_SEC = 2.0
+# Floor for the poll interval. A non-positive poll_sec would make time.sleep
+# raise (negative) or spin the discovery/CPU loop with zero delay (0.0),
+# pegging a core and hammering psutil + the daemon. Clamp so the probe's
+# "never crash / never busy-loop" contract holds regardless of the caller.
+MIN_POLL_SEC = 0.1
 DEFAULT_BUSY_CPU_THRESHOLD = 10.0  # process-level CPU% that counts as "working"
 DEFAULT_IDLE_AFTER_SEC = 6.0  # seconds of quiet CPU before we emit Stop
 
@@ -160,7 +165,10 @@ class CodexProbe:
         idle_after_sec: float = DEFAULT_IDLE_AFTER_SEC,
     ):
         self.daemon_url = daemon_url
-        self.poll_sec = poll_sec
+        # Clamp to a positive floor: time.sleep(negative) raises and would
+        # escape run_forever (violating "probe must never crash"), while 0.0
+        # turns the poll loop into a busy-spin.
+        self.poll_sec = max(poll_sec, MIN_POLL_SEC)
         self.busy_threshold = busy_threshold
         self.idle_after_sec = idle_after_sec
         self._tracked: dict[int, TrackedProc] = {}
