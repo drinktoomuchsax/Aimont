@@ -245,12 +245,15 @@ def _apply_push_env_overrides(merged: dict[str, Any]) -> None:
     if url is None:
         return
 
-    # A present-but-null section (`transports:` on its own line) parses to None,
-    # so setdefault returns None rather than a dict. Coerce it before indexing —
-    # otherwise .get()/item-assignment below raises an uncaught AttributeError
-    # that escapes load_config's ConfigError contract.
-    transports = merged.get("transports") or {}
-    merged["transports"] = transports
+    # A present-but-null section (`transports:` on its own line) parses to None
+    # and is treated as an empty section. A wrong-typed one (`transports: 5`,
+    # `transports: "foo"`) parses to a non-dict; without the env override it
+    # reaches model_validate as a clean ConfigError, but here it would hit
+    # .get()/item-assignment first and raise an uncaught AttributeError/TypeError
+    # that escapes load_config's ConfigError contract. An `or {}` guard rescues
+    # only the falsy (None) case, so check the type explicitly and surface the
+    # same ConfigError the no-override path would.
+    transports = _coerce_section(merged, "transports")
     existing = transports.get("push")
     if existing is None:
         transports["push"] = {
@@ -350,11 +353,12 @@ def _apply_ingest_env_overrides(merged: dict[str, Any]) -> None:
         # Don't silently misinterpret garbage values.
         return
 
-    # A present-but-null `ingest:` section parses to None, so setdefault returns
-    # None rather than a dict. Coerce it before item-assignment — otherwise this
-    # raises an uncaught TypeError that escapes load_config's ConfigError contract.
-    ingest = merged.get("ingest") or {}
-    merged["ingest"] = ingest
+    # A present-but-null `ingest:` section parses to None (treated as empty); a
+    # wrong-typed one parses to a non-dict, which would make the item-assignment
+    # below raise an uncaught TypeError that escapes load_config's ConfigError
+    # contract. Coerce None to {} and surface a non-dict as a ConfigError, matching
+    # what the no-override path produces at model_validate.
+    ingest = _coerce_section(merged, "ingest")
     ingest["enabled"] = enabled
 
     if not enabled:
@@ -364,6 +368,27 @@ def _apply_ingest_env_overrides(merged: dict[str, Any]) -> None:
     tokens_env = os.environ.get("AIMONT_INGEST_TOKENS")
     if tokens_env:
         ingest["allowed_tokens"] = [t.strip() for t in tokens_env.split(",") if t.strip()]
+
+
+def _coerce_section(merged: dict[str, Any], name: str) -> dict[str, Any]:
+    """Return merged[name] as a dict, ready for env-override item-assignment.
+
+    A missing or present-but-null section (`ingest:` on its own line, which YAML
+    parses to None) is treated as an empty section. A wrong-typed section
+    (`ingest: 5`, `transports: "foo"`) is a genuine misconfiguration: without an
+    env override it reaches AimontConfig.model_validate and fails with a clean
+    ConfigError, so raise the same error here rather than crashing later with an
+    uncaught TypeError/AttributeError when the caller assigns into it.
+    """
+    section = merged.get(name)
+    if section is None:
+        section = {}
+        merged[name] = section
+    elif not isinstance(section, dict):
+        raise ConfigError(
+            f"config section {name!r} must be a mapping, got {type(section).__name__}"
+        )
+    return section
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
