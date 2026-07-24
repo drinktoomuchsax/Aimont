@@ -379,6 +379,36 @@ async def test_backoff_escalates_when_connection_drops_immediately(monkeypatch):
     assert seen[-1] > seen[0], f"backoff never escalated: {seen}"
 
 
+async def test_send_times_out_on_backpressuring_upstream():
+    """ws.send() awaits the write-buffer drain, so a connected-but-slow upstream
+    would otherwise wedge the broadcast hot path (handle_event awaits each
+    transport's send in turn) until ping_timeout (~20s) reaps the connection.
+    _send_payload must bound the send and return promptly, dropping the frame."""
+    from websockets.protocol import State
+
+    release = asyncio.Event()
+
+    class _BlockingWS:
+        state = State.OPEN
+
+        async def send(self, payload):
+            # Simulate an upstream that has stopped draining: never completes
+            # until explicitly released (which the test never does).
+            await release.wait()
+
+    t = PushTransport(
+        name="push",
+        options={
+            "upstream_url": "ws://127.0.0.1:1",
+            "host_identity": HostIdentity(host_id="h1"),
+            "send_timeout_sec": 0.05,
+        },
+    )
+    t._ws = _BlockingWS()
+    # Must return within roughly the send timeout, not block indefinitely.
+    await asyncio.wait_for(t._send_payload("{}"), timeout=1.0)
+
+
 async def test_missing_host_identity_disables_transport(fake_upstream):
     """Without host_identity, transport refuses to connect (safe default)."""
     t = PushTransport(
