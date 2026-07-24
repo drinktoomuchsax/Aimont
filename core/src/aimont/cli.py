@@ -245,7 +245,19 @@ def watch(
             async with websockets.connect(url) as ws:
                 typer.echo("Connected. Watching state changes (Ctrl+C to stop):\n")
                 async for message in ws:
-                    frame = json.loads(message)
+                    try:
+                        frame = json.loads(message)
+                    except json.JSONDecodeError:
+                        # A well-behaved daemon only sends JSON frames. A
+                        # non-JSON text frame means something that isn't the
+                        # aimont daemon completed the WS handshake on this port
+                        # — mirror the sibling commands' clean "wrong port?"
+                        # exit instead of dumping a JSONDecodeError traceback.
+                        typer.echo(
+                            "Unexpected response from daemon (not JSON — wrong port?).",
+                            err=True,
+                        )
+                        raise typer.Exit(1)
                     typer.echo(format_watch_frame(frame))
         except ConnectionRefusedError:
             typer.echo("Daemon is not running.", err=True)
