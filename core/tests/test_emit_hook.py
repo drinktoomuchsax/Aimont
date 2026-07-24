@@ -130,5 +130,35 @@ def test_start_daemon_holds_lock_until_port_binds(emit, tmp_path, monkeypatch):
     assert len(spawned) == 1
 
 
+def test_http_error_does_not_trigger_daemon_autostart(emit, monkeypatch):
+    """A live daemon returning 4xx/5xx must NOT be misread as 'daemon down'.
+
+    urllib.error.HTTPError subclasses URLError, so if it isn't caught first the
+    error falls into the retry-with-autostart branch: emit spawns a duplicate
+    that can't bind the port, clobbers PIDFILE with a dead pid, and re-sends the
+    request the live daemon already rejected. The fix drops the HTTPError instead.
+    """
+    import io
+    import urllib.error
+
+    def raise_http_error(req, timeout=None):
+        raise urllib.error.HTTPError(
+            url=emit.DAEMON_URL, code=500, msg="boom", hdrs=None, fp=io.BytesIO(b"")
+        )
+
+    monkeypatch.setattr(emit.urllib.request, "urlopen", raise_http_error)
+
+    started = []
+    monkeypatch.setattr(emit, "_start_daemon", lambda: started.append(True))
+
+    payload = '{"hook_event_name": "Stop", "session_id": "s1"}'
+    monkeypatch.setattr(emit.sys, "stdin", io.StringIO(payload))
+    monkeypatch.setattr(emit.sys, "argv", ["emit.py"])
+
+    emit.main()  # must not raise, must not autostart
+
+    assert started == []
+
+
 class _FakeProc:
     pid = 4321
