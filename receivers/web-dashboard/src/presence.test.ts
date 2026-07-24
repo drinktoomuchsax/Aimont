@@ -27,6 +27,31 @@ describe('presenceFromFrame', () => {
     expect(p!.lastActiveAgoMs).toBe(4200)
   })
 
+  it('anchors lastActiveAt to receive-time minus the age, not the daemon clock', () => {
+    // Anchoring to local receive time means the label only ever adds locally
+    // measured elapsed time to the daemon's ago snapshot — immune to skew.
+    const receivedAt = new Date('2026-07-24T00:00:10Z')
+    const p = presenceFromFrame(
+      { host: { host_id: 'h2' }, status: 'offline', last_active_ago_ms: 4000 } as any,
+      receivedAt,
+    )
+    expect(p!.lastActiveAt!.toISOString()).toBe('2026-07-24T00:00:06.000Z')
+  })
+
+  it('leaves lastActiveAt null when the age is unknown or negative', () => {
+    const receivedAt = new Date('2026-07-24T00:00:10Z')
+    const online = presenceFromFrame(
+      { host: { host_id: 'h1' }, status: 'online', last_active_ago_ms: null } as any,
+      receivedAt,
+    )
+    expect(online!.lastActiveAt).toBeNull()
+    const negative = presenceFromFrame(
+      { host: { host_id: 'h3' }, status: 'offline', last_active_ago_ms: -5 } as any,
+      receivedAt,
+    )
+    expect(negative!.lastActiveAt).toBeNull()
+  })
+
   it('returns null when host_id is missing', () => {
     expect(presenceFromFrame({ status: 'online' } as any)).toBeNull()
     expect(presenceFromFrame({ host: {}, status: 'online' } as any)).toBeNull()

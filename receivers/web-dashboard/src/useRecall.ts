@@ -112,20 +112,32 @@ export function mergeSnapshot(
 }
 
 // Map a raw presence frame to a HostPresence entry. Exported for testing.
-export function presenceFromFrame(frame: {
-  host?: { host_id?: string; display_name?: string }
-  status?: string
-  last_active_ago_ms?: number | null
-  timestamp?: string
-}): HostPresence | null {
+// `receivedAt` is the browser-clock instant the frame arrived (injectable for
+// deterministic tests); lastActiveAt is anchored to it so the derived "last
+// seen" label counts up on a timer without trusting the daemon's clock.
+export function presenceFromFrame(
+  frame: {
+    host?: { host_id?: string; display_name?: string }
+    status?: string
+    last_active_ago_ms?: number | null
+    timestamp?: string
+  },
+  receivedAt: Date = new Date(),
+): HostPresence | null {
   const hostId = frame.host?.host_id
   if (!hostId) return null
+  const agoMs = frame.last_active_ago_ms ?? null
+  // Anchor the last-active instant to local receive time minus the daemon's
+  // age snapshot. A negative/absent age has no meaningful instant.
+  const lastActiveAt =
+    agoMs != null && agoMs >= 0 ? new Date(receivedAt.getTime() - agoMs) : null
   return {
     hostId,
     displayName: frame.host?.display_name,
     status: frame.status === 'offline' ? 'offline' : 'online',
-    lastActiveAgoMs: frame.last_active_ago_ms ?? null,
-    lastChange: frame.timestamp ? new Date(frame.timestamp) : new Date(),
+    lastActiveAgoMs: agoMs,
+    lastActiveAt,
+    lastChange: frame.timestamp ? new Date(frame.timestamp) : receivedAt,
   }
 }
 
