@@ -222,6 +222,14 @@ def main():
 
         try:
             urllib.request.urlopen(req, timeout=TIMEOUT_SEC)
+        except urllib.error.HTTPError:
+            # The daemon answered — with a 4xx/5xx, but it's up. HTTPError is a
+            # subclass of URLError, so without catching it first it would fall
+            # into the "daemon down" branch below: we'd spawn a duplicate that
+            # can't bind the port, clobber PIDFILE with its dead pid, and retry
+            # the same request the live daemon already rejected. Nothing the
+            # host can do about a bad response here, so just drop it.
+            pass
         except (urllib.error.URLError, ConnectionRefusedError, OSError):
             _start_daemon()
             time.sleep(0.3)
