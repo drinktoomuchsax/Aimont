@@ -102,7 +102,16 @@ class StateMachine:
         # state's TTL expires it degrades (effective_state reflects this), so
         # time past the TTL is charged to the degrade target, not _current.
         self._charge_elapsed(self._durations, elapsed)
-        self._last_duration = elapsed
+        # The emitted frame reports `previous = effective_state` — the degraded
+        # target once the TTL expired, not the raw _current. Its scalar duration
+        # must therefore be the time spent in THAT degraded state (elapsed past
+        # the TTL boundary), else a frame claims e.g. "awaiting_input for 100s"
+        # when only the post-60s-TTL remainder was actually awaiting_input.
+        ttl_config = self._get_ttl_config()
+        if ttl_config is not None and elapsed > ttl_config.ttl_sec:
+            self._last_duration = elapsed - ttl_config.ttl_sec
+        else:
+            self._last_duration = elapsed
         # Move to new state
         self._current = new_state
         self._set_at = now

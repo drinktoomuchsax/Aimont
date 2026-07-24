@@ -146,6 +146,38 @@ async def test_apply_charges_post_ttl_time_to_degrade_target(fast_ttl_config):
 
 
 @pytest.mark.asyncio
+async def test_last_duration_reflects_time_in_degraded_state(fast_ttl_config):
+    """When a state's TTL expired before the next transition, the frame reports
+    previous = effective_state (the degraded target). last_duration must then be
+    the time spent in THAT degraded state (elapsed past the TTL), not the total
+    elapsed — else `previous` and `duration` are internally inconsistent."""
+    sm = StateMachine(fast_ttl_config)
+
+    await sm.transition(AimontState.WORKING)  # ttl 0.1s, degrades to awaiting_input
+    await asyncio.sleep(0.3)
+    # effective_state has already degraded to awaiting_input.
+    assert sm.effective_state == AimontState.AWAITING_INPUT
+    await sm.transition(AimontState.ERROR)
+
+    # ~0.2s was spent in the degraded awaiting_input state (0.3 total - 0.1 ttl),
+    # NOT the full 0.3s.
+    assert sm.last_duration() == pytest.approx(0.2, abs=0.05)
+
+
+@pytest.mark.asyncio
+async def test_last_duration_is_full_elapsed_when_not_expired(fast_ttl_config):
+    """No TTL expiry → previous is the raw current state, so last_duration is the
+    full time spent there (unchanged behavior)."""
+    sm = StateMachine(fast_ttl_config)
+
+    await sm.transition(AimontState.WORKING)
+    await asyncio.sleep(0.05)  # under the 0.1s TTL
+    await sm.transition(AimontState.ERROR)
+
+    assert sm.last_duration() == pytest.approx(0.05, abs=0.04)
+
+
+@pytest.mark.asyncio
 async def test_backward_clock_never_yields_negative_durations(default_config, monkeypatch):
     """A backward wall-clock step (NTP/VM correction) between _set_at and a read
     must not produce negative durations. elapsed is clamped to >= 0, so the
