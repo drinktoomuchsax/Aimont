@@ -352,6 +352,20 @@ async def test_malformed_hello_closes_connection():
                 await asyncio.wait_for(ws.recv(), 2.0)
 
 
+@pytest.mark.parametrize("scalar_hello", ["123", '"hi"', "[1, 2]", "true", "null"])
+async def test_non_dict_hello_closes_connection_cleanly(scalar_hello):
+    """A hello that is valid JSON but not an object (int/str/list/bool/null)
+    must produce the clean 4400 close, not crash the handler with an
+    AttributeError from calling .get() on a non-dict."""
+    cfg = _default_config(ingest_enabled=True)
+    async with _running_daemon(cfg) as (_, base):
+        async with websockets.connect(f"{base}/ingest") as ws:
+            await ws.send(scalar_hello)
+            with pytest.raises(websockets.exceptions.ConnectionClosed) as ei:
+                await asyncio.wait_for(ws.recv(), 2.0)
+            assert ei.value.rcvd.code == 4400
+
+
 async def test_ingest_closes_when_hello_never_arrives():
     """A peer that authorizes and gets accepted but never sends its hello
     frame must be closed after hello_timeout_sec, not parked forever."""
